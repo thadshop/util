@@ -2,7 +2,6 @@
 # Test that decryption will work (KEK in keyring, DEK decrypts,
 # secrets-test.enc when present).
 # Exit 0 if OK; exit 1 with error message if not.
-# Other scripts can call this to verify before operations that need decryption.
 
 _script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 # shellcheck source=lib.sh
