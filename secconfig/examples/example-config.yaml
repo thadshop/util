@@ -1,0 +1,10 @@
+# Sample config (plain YAML - for basic load test)
+# Use create-sample-encrypted.sh to create example-config.enc.yaml
+# (sops-encrypted)
+app:
+  name: test-app
+  debug: false
+database:
+  host: localhost
+  port: 5432
+  password: secret123  # encrypted in example-config.enc.yaml

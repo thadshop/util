@@ -1,0 +1,29 @@
+# Copy this file to:  $SECCONFIG_DIR/.sops.yaml
+# Replace age1... below with your age public key, e.g.:
+#   path/to/keyring/get-dek.sh | age-keygen -y /dev/stdin
+#
+# Encrypt plain *.yaml under SECCONFIG_DIR:
+#   SECCONFIG_DIR=... path/to/secconfig/scripts/encrypt-config.sh rel/path.yaml
+#
+# YAML supports comments: any line starting with #, or text after # on a
+# line (outside quotes).
+#
+# Subdirectory-specific rules: add more list entries under creation_rules,
+# each with its own path_regex (and age / encrypted_suffix as needed).
+# sops uses the FIRST rule whose path_regex matches the file you pass to
+# sops -e. Put specific paths above; keep the broad catchall last.
+#
+# Example — encrypt only under a subtree with a different suffix (optional):
+#   - path_regex: .*/production/.*\.yaml$
+#     encrypted_suffix: '_secrypt'
+#     age: age1your_public_key_here
+#
+# Example — same suffix, only match one app directory:
+#   - path_regex: .*/apps/billing/.*\.yaml$
+#     encrypted_suffix: '_secrypt'
+#     age: age1your_public_key_here
+
+creation_rules:
+  - path_regex: .*\.yaml$
+    encrypted_suffix: '_secrypt'
+    age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY

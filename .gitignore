@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Encrypted files anywhere in the repo (DEK, sops outputs, secrets-test.enc, etc.)
+*.enc
+*.enc.*
+*.encrypted
+*.encrypted.*
+
+# secconfig example — local sops config (contains age recipient)
+secconfig/examples/.sops.yaml
