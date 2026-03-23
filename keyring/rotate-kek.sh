@@ -2,32 +2,30 @@
 # Rotate the KEK and re-encrypt the DEK with the new KEK.
 # If DEK does not exist, creates it (generates new age key).
 # Requires: age-keygen, openssl, keyutils.
-#
-# The encrypted DEK is stored at:
-#   <script_dir>/dek.encrypted
 
 _script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 _dek_file="${_script_dir}/dek.encrypted"
 # shellcheck source=lib.sh
 source "${_script_dir}/lib.sh"
 
-# Encrypt DEK with KEK using openssl (KEK from fd, no passphrase in argv)
+# Encrypt DEK with KEK using openssl
 _secrets_encrypt_dek() {
     local kek="${1}"
     local dek="${2}"
     local out_file="${3}"
     printf '%s' "${dek}" | openssl enc -aes-256-cbc -salt -pbkdf2 \
-      -pass file:<(printf '%s' "${kek}") -out "${out_file}"
+        -pass file:<(printf '%s' "${kek}") -out "${out_file}"
 }
 
-# Decrypt DEK with KEK (stderr suppressed; caller checks output format)
+# Decrypt DEK with KEK
 _secrets_decrypt_dek() {
     local kek="${1}"
     local enc_file="${2}"
     openssl enc -d -aes-256-cbc -pbkdf2 \
-      -pass file:<(printf '%s' "${kek}") -in "${enc_file}" 2>/dev/null
+        -pass file:<(printf '%s' "${kek}") -in "${enc_file}" 2>/dev/null
 }
 
+# Rotate KEK
 _secrets_rotate_kek() {
     if ! secrets_no_debug; then
         return 1

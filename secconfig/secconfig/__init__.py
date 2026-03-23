@@ -1,4 +1,6 @@
-"""Load YAML config files with sops-encrypted secrets."""
+"""
+Load YAML config files with sops-encrypted secrets.
+"""
 
 from secconfig.loader import (
     SECCONFIG_DIR_ENV,

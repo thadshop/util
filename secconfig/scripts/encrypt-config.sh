@@ -1,29 +1,31 @@
 #!/usr/bin/env bash
-# Encrypt a plaintext YAML under SECCONFIG_DIR to *.enc.yaml using sops.
-# Uses $SECCONFIG_DIR/.sops.yaml (creation_rules, e.g. encrypted_suffix).
-# Encrypting uses public age keys from .sops.yaml; get-dek.sh is not required.
-#
-# Usage:
-#   export SECCONFIG_DIR=/path/to/config
-#   encrypt-config.sh [-f|--force] [--help] path/to/plain.yaml
-#
-# path may be relative to SECCONFIG_DIR or absolute (must stay under it).
-# -f / --force overwrites an existing output file.
+# This script encrypts a plaintext YAML file under SECCONFIG_DIR.
+# It uses the .sops.yaml configuration file to determine encryption rules.
+# The encryption process uses public age keys specified in .sops.yaml.
+# The output is written as <name>.enc.yaml next to the input file.
 
 set -e
 
 usage() {
     printf '%s\n' \
-      "usage: encrypt-config.sh [-f|--force] [--help] <plain.yaml>" >&2
-    printf '%s\n' "  SECCONFIG_DIR must name the directory with .sops.yaml." \
-      >&2
-    printf '%s\n' "  Writes <name>.enc.yaml next to <name>.yaml (or .yml)." \
-      >&2
+        "usage: encrypt-config.sh [-f|--force] [--help] <plain.yaml>" >&2
+    printf '%s\n' \
+        "  SECCONFIG_DIR must name the directory with .sops.yaml." >&2
+    printf '%s\n' \
+        "  Writes <name>.enc.yaml next to <name>.yaml (or .yml)." >&2
 }
 
 _force=0
-while [[ ${#} -gt 0 ]]; do
-    case ${1} in
+# Parse options using getopt for both short and long option names
+OPTS=$(getopt -o fh --long force,help -n $(basename "${0}") -- "${@}")
+if [[ ${?} != 0 ]]; then
+    printf '%s\n' "Failed parsing options." >&2
+    exit 1
+fi
+eval set -- "${OPTS}"
+
+while true; do
+    case "${1}" in
         -f|--force)
             _force=1
             shift
@@ -36,16 +38,15 @@ while [[ ${#} -gt 0 ]]; do
             shift
             break
             ;;
-        -*)
-            printf '%s\n' "encrypt-config: unknown option: ${1}" >&2
+        *)
+            printf '%s\n' "Invalid option: ${1}" >&2
             usage
             exit 1
             ;;
-        *)
-            break
-            ;;
     esac
 done
+
+shift $((OPTIND -1))
 
 if [[ ${#} -ne 1 ]]; then
     usage

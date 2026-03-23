@@ -1,4 +1,6 @@
-"""Secure loader for YAML config files with sops-encrypted secrets."""
+"""
+Secure loader for YAML config files with sops-encrypted secrets.
+"""
 
 import os
 import shutil
@@ -14,8 +16,9 @@ SECCONFIG_DIR_ENV = "SECCONFIG_DIR"
 
 
 class SecretsConfigError(Exception):
-    """Raised when config loading fails or security checks fail."""
-
+    """
+    Raised when config loading fails or security checks fail.
+    """
     pass
 
 
@@ -32,18 +35,12 @@ def _validate_seconfig_directory(path: Path) -> Path:
         )
     if not path.is_dir():
         raise SecretsConfigError(
-            f"secconfig: {SECCONFIG_DIR_ENV} must be a directory (not "
-            f"usable): {path}"
+            f"secconfig: {SECCONFIG_DIR_ENV} must be a directory (not usable):"
+            f" {path}"
         )
     if not os.access(path, os.R_OK):
         raise SecretsConfigError(
-            f"secconfig: {SECCONFIG_DIR_ENV} directory is not readable "
-            f"(permission denied): {path}"
-        )
-    if not os.access(path, os.X_OK):
-        raise SecretsConfigError(
-            f"secconfig: {SECCONFIG_DIR_ENV} directory is not searchable "
-            f"(cannot access contents): {path}"
+            f"secconfig: {SECCONFIG_DIR_ENV} directory is not readable: {path}"
         )
     return path
 

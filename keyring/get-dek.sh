@@ -35,8 +35,39 @@ if [[ ! -f "${_dek_file}" ]]; then
     exit 1
 fi
 
+output_file="/dev/null"
+
+# Parse options using getopt for both short and long option names
+OPTS=$(getopt -o o: --long output: -n $(basename "${0}") -- "${@}")
+if [[ ${?} != 0 ]]; then
+    printf '%s\n' "Failed parsing options." >&2
+    exit 1
+fi
+eval set -- "${OPTS}"
+
+while true; do
+    case "${1}" in
+        -o|--output)
+            output_file="${2}"
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            printf '%s\n' "Invalid option: ${1}" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [[ "${output_file}" == "/dev/null" ]]; then
+    printf '%s\n' "secrets: ${_script_path}: output sent to /dev/null by default. Specify -o <file> to save output, or -o /dev/stdout for stdout." >&2
+fi
+
 if ! openssl enc -d -aes-256-cbc -pbkdf2 \
-  -pass file:<(printf '%s' "${kek}") -in "${_dek_file}" 2>/dev/null; then
+  -pass file:<(printf '%s' "${kek}") -in "${_dek_file}" > "${output_file}" 2>/dev/null; then
     printf '%s\n' "secrets: ${_script_path}: failed (decrypt)" >&2
     printf '%s\n' 'secrets: wrong KEK or corrupted file' >&2
     kek=''

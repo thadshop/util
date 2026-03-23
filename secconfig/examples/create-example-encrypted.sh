@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Create example-config.enc.yaml from example-config.yaml using sops.
 # Requires: bash secrets initialized, sops, age-keygen.
-# Run from secconfig/examples/ or with that dir as cwd.
 
 set -e
 
@@ -31,11 +30,11 @@ _public_key=$(age-keygen -y "${_key_file}")
 
 # Create .sops.yaml (encrypted_regex: only encrypt password values).
 # path_regex matches the file passed to sops -e (plaintext path), not --output.
-# Optional (\\.enc)? so the same rule applies
+# Optional (\.enc)? so the same rule applies
 # if you edit example-config.enc.yaml.
 printf '%s\n' "creation_rules:" > "${_sops_config}"
 printf '%s\n' \
-  '  - path_regex: example-config(\.enc)?\.yaml$' >> "${_sops_config}"
+    '  - path_regex: example-config(\.enc)?\.yaml$' >> "${_sops_config}"
 printf '%s\n' "    encrypted_regex: '^password$'" >> "${_sops_config}"
 printf '%s\n' "    age: ${_public_key}" >> "${_sops_config}"
 

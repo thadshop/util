@@ -1,0 +1,21 @@
+---
+description: Python formatting style for this project
+globs: "**/*.py"
+alwaysApply: true
+---
+
+# Python Formatting Style
+
+When editing Python code in this project, follow these conventions:
+
+## Line Length
+- Maximum 80 characters per line (PEP 8)
+- Docstrings: maximum 72 characters per line (PEP 8)
+
+## Style
+- Conform to PEP 8
+- Use PyYAML for YAML config files
+
+## Docstrings
+- Wrap docstring lines at 72 characters
+- Use triple-quoted strings; keep content within the limit

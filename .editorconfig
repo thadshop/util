@@ -1,0 +1,12 @@
+root = true
+
+[*.sh]
+indent_style = space
+indent_size = 4
+max_line_length = 80
+
+# Additional rules based on .cursor/rules/bash-formatting.mdc
+# Comments should be placed inside the function body, directly under the function name
+# Use backslash (\) for line continuation with 2-space indentation
+# Always wrap variable references in ${}
+# Use printf instead of echo for output
