@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Test script for secconfig: load YAML config (plain or encrypted)."""
+"""
+Test script for secconfig: load YAML config (plain or encrypted).
+"""
 
 import sys
 from pathlib import Path
@@ -11,6 +13,9 @@ _EXAMPLES = SCRIPT_DIR.parent / "examples"
 
 
 def main() -> None:
+    """
+    Run tests for plain and encrypted YAML configs.
+    """
     # Test 1: plain YAML
     plain_path = _EXAMPLES / "example-config.yaml"
     if plain_path.exists():
