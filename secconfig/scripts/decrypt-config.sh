@@ -1,23 +1,9 @@
 #!/usr/bin/env bash
-# Decrypt a sops YAML under SECCONFIG_DIR and write cleartext YAML to stdout.
-# Runs get-dek.sh into a /dev/shm file and sets SOPS_AGE_KEY_FILE (same idea
-# as secconfig's Python loader). sops may read that file more than once, so
-# piping the key or SOPS_AGE_KEY_FILE=/dev/stdin is not reliable.
-#
-# Optional: set the private key without a temp file using SOPS_AGE_KEY (sops
-# reads the env var); that keeps the DEK in the environment — avoid if
-# untrusted users can read process environments.
-#
-# Usage:
-#   export SECCONFIG_DIR=/path/to/config
-#   decrypt-config.sh [--get-dek /path/to/get-dek.sh] path/to/file.enc.yaml
-#
-# --get-dek / -k: path to the get-dek.sh executable (not a file containing
-# the key). That script prints the DEK to stdout; this wrapper captures it.
-#
-# Path may be relative to SECCONFIG_DIR or absolute (must stay under it).
-# After checks, prompts on stderr: cleartext warning; only "y" proceeds
-# (default N).
+# This script decrypts a sops-encrypted YAML file under SECCONFIG_DIR.
+# It uses get-dek.sh to retrieve the DEK (Data Encryption Key),
+# which is stored temporarily in /dev/shm for security.
+# The SOPS_AGE_KEY_FILE environment variable is set to point to the DEK.
+# The decrypted YAML is printed to stdout in cleartext.
 
 set -e
 
@@ -26,37 +12,29 @@ _default_get_dek_script="${_script_dir}/../../keyring/get-dek.sh"
 
 usage() {
     printf '%s\n' \
-      "usage: decrypt-config.sh [-k|--get-dek SCRIPT] [--help] <file.enc.yaml>" \
-      >&2
+        "usage: decrypt-config.sh [-k|--get-dek SCRIPT] [--help] <file.enc.yaml>" >&2
     printf '%s\n' \
-      "  SCRIPT = path to get-dek.sh (executable). It prints the DEK; not a" \
-      >&2
-    printf '%s\n' "  key-on-disk file." >&2
+        "  SCRIPT = path to get-dek.sh (executable). It prints the DEK." >&2
     printf '%s\n' \
-      "  SECCONFIG_DIR must name your config root (optional .sops.yaml)." \
-      >&2
+        "  SECCONFIG_DIR must name your config root (optional .sops.yaml)." >&2
     printf '%s\n' \
-      "  Default SCRIPT: ${_default_get_dek_script}" >&2
-    printf '%s\n' \
-      "  Override: -k, --get-dek, or GET_DEK_PATH (same: path to script)." >&2
+        "  Default SCRIPT: ${_default_get_dek_script}" >&2
 }
 
 _get_dek_script=""
-while [[ ${#} -gt 0 ]]; do
-    case ${1} in
+# Parse options using getopt for both short and long option names
+OPTS=$(getopt -o k:h --long get-dek:,help -n $(basename "${0}") -- "${@}")
+if [[ ${?} != 0 ]]; then
+    printf '%s\n' "Failed parsing options." >&2
+    exit 1
+fi
+eval set -- "${OPTS}"
+
+while true; do
+    case "${1}" in
         -k|--get-dek)
-            if [[ ${#} -lt 2 ]] || [[ "${2}" == -* ]]; then
-                printf '%s\n' \
-                  'decrypt-config: -k/--get-dek requires path to get-dek.sh' \
-                  >&2
-                exit 1
-            fi
             _get_dek_script="${2}"
             shift 2
-            ;;
-        --get-dek=*)
-            _get_dek_script="${1#*=}"
-            shift
             ;;
         -h|--help)
             usage
@@ -66,16 +44,15 @@ while [[ ${#} -gt 0 ]]; do
             shift
             break
             ;;
-        -*)
-            printf '%s\n' "decrypt-config: unknown option: ${1}" >&2
+        *)
+            printf '%s\n' "Invalid option: ${1}" >&2
             usage
             exit 1
             ;;
-        *)
-            break
-            ;;
     esac
 done
+
+shift $((OPTIND -1))
 
 if [[ ${#} -ne 1 ]]; then
     usage

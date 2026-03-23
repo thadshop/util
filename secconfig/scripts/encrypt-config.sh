@@ -16,7 +16,15 @@ usage() {
 }
 
 _force=0
-while [[ ${#} -gt 0 ]]; do
+# Parse options using getopt for both short and long option names
+OPTS=$(getopt -o fh --long force,help -n $(basename "${0}") -- "${@}")
+if [[ ${?} != 0 ]]; then
+    printf '%s\n' "Failed parsing options." >&2
+    exit 1
+fi
+eval set -- "${OPTS}"
+
+while true; do
     case "${1}" in
         -f|--force)
             _force=1
@@ -30,15 +38,15 @@ while [[ ${#} -gt 0 ]]; do
             shift
             break
             ;;
-        -*)
-            printf '%s\n' "encrypt-config: unknown option: ${1}" >&2
-            exit 1
-            ;;
         *)
-            break
+            printf '%s\n' "Invalid option: ${1}" >&2
+            usage
+            exit 1
             ;;
     esac
 done
+
+shift $((OPTIND -1))
 
 if [[ ${#} -ne 1 ]]; then
     usage

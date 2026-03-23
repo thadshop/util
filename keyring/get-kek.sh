@@ -12,14 +12,26 @@ source "${_script_dir}/lib.sh"
 
 output_file="/dev/null"
 
-while [[ ${#} -gt 0 ]]; do
+# Parse options using getopt for both short and long option names
+OPTS=$(getopt -o o: --long output: -n $(basename "${0}") -- "${@}")
+if [[ ${?} != 0 ]]; then
+    printf '%s\n' "Failed parsing options." >&2
+    exit 1
+fi
+eval set -- "${OPTS}"
+
+while true; do
     case "${1}" in
         -o|--output)
             output_file="${2}"
             shift 2
             ;;
+        --)
+            shift
+            break
+            ;;
         *)
-            printf '%s\n' "secrets: ${_script_path}: unrecognized argument '${1}'" >&2
+            printf '%s\n' "Invalid option: ${1}" >&2
             exit 1
             ;;
     esac
