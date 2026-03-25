@@ -1,5 +1,5 @@
 # Sample config (plain YAML - for basic load test)
-# Use create-sample-encrypted.sh to create example-config.enc.yaml
+# Use create-example-encrypted.sh to create example-config.enc.yaml
 # (sops-encrypted)
 app:
   name: test-app

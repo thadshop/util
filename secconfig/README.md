@@ -1,7 +1,8 @@
 # secconfig
 
-Load YAML config files with sops-encrypted secrets. Uses the repo's
-`keyring/get-dek.sh` to obtain the age key; no cleartext secrets on disk.
+Load YAML config files with sops-encrypted secrets. **`load_config()`**
+invokes **`keyring/with-sops-dek.sh`** so the age DEK is handled like the
+shell helpers; cleartext DEK bytes are not read into Python.
 
 **Linux only.** Requires `/dev/shm` (tmpfs); cleartext keys are never written to disk.
 
@@ -14,8 +15,16 @@ Load YAML config files with sops-encrypted secrets. Uses the repo's
 - Keyring initialized (source `keyring/init.sh`, run
   `rotate-kek.sh` to create DEK if needed)
 
-Importing secconfig runs a prerequisite check. If any are missing, import fails
-with a clear message listing what to fix.
+Call **`check_prereqs()`** before first use (or rely on **`load_config`**
+errors) to verify sops, keyring, and other requirements. Importing the package
+alone does **not** run the full check.
+
+## Repository layout
+
+**secconfig** is meant to be used with the full **`util`** tree checked out.
+**`load_config()`** and **`scripts/decrypt-config.sh`** use
+**`keyring/with-sops-dek.sh`** for sops decrypt. There is no supported
+workflow with **only** the **`secconfig/`** directory copied out.
 
 ## Project directory (`SECCONFIG_DIR`)
 
@@ -55,8 +64,9 @@ config = load_config("config.enc.yaml")
 config = load_config(Path("/path/to/config.enc.yaml"))
 ```
 
-For sops-encrypted files, the package automatically detects encryption and
-decrypts using the DEK from the kernel keyring (via get-dek.sh).
+For sops-encrypted files, the package detects encryption and decrypts via
+**`keyring/with-sops-dek.sh`** (which uses **`get-dek.sh`** and your
+**`SECCONFIG_DIR`** / **`.sops.yaml`** when present).
 
 ## Security
 
@@ -82,10 +92,11 @@ files there.
 | `examples/example-config.yaml` | Plain YAML sample for tests |
 | `examples/example-config.enc.yaml` | Encrypted sample (regenerate with script below) |
 | `examples/.sops.yaml` | Local sops rules for the sample encrypt script (often gitignored) |
-| `examples/create-sample-encrypted.sh` | Builds `example-config.enc.yaml` and `.sops.yaml` for `tests/` |
+| `examples/create-example-encrypted.sh` | Builds `example-config.enc.yaml` and `.sops.yaml` for `tests/` |
 | `examples/example-SECCONFIG_DIR.sops.yaml` | Template for `$SECCONFIG_DIR/.sops.yaml` (e.g. `encrypted_suffix: '_secrypt'`) |
-| `scripts/encrypt-config.sh` | Encrypt one plain `*.yaml` under `SECCONFIG_DIR` → `*.enc.yaml` |
-| `scripts/decrypt-config.sh` | Decrypt to stdout (cleartext warning + confirm `y`) |
+| `scripts/encrypt-config.sh` | Encrypt plain `*.yaml`: **`-i`** path (or **`-`** stdin) → `*.enc.yaml` |
+| `scripts/decrypt-config.sh` | Decrypt: **`-i`** path (or **`-`** stdin); uses `../keyring/with-sops-dek.sh` |
+| `scripts/edit-encrypted-config.sh` | Interactive **new** / **edit** with sops (cleartext in **`/dev/shm`**); see **`../keyring/EDIT_ENCRYPT_WORKFLOW.md`** |
 
 Keyring init fixtures live under `../keyring/` (`secrets-test.txt` /
 `secrets-test.enc`); see [keyring/README.md](../keyring/README.md).
@@ -109,7 +120,7 @@ with encrypted config:
 
 ```bash
 cd examples/
-./create-sample-encrypted.sh   # example-config.enc.yaml from example-config.yaml
+./create-example-encrypted.sh   # example-config.enc.yaml from example-config.yaml
 cd ..
 python tests/test_config.py
 ```
@@ -145,11 +156,11 @@ creation_rules:
 
 ```bash
 # From your DEK (after rotate-kek.sh). Key must be in a file; use /dev/shm:
-path/to/get-dek.sh > /dev/shm/age-key && age-keygen -y /dev/shm/age-key
+path/to/get-dek.sh -o /dev/shm/age-key && age-keygen -y /dev/shm/age-key
 rm -f /dev/shm/age-key
 ```
 
-Or use `create-sample-encrypted.sh` as a reference; it does this automatically.
+Or use `create-example-encrypted.sh` as a reference; it does this automatically.
 
 ### 3. Encrypt
 
@@ -161,6 +172,14 @@ sops -e --output example-config.enc.yaml example-config.yaml
 here). Use `--output` only to choose where the ciphertext is written; it does
 not change which creation rule applies.
 
+### Interactive edit (`scripts/edit-encrypted-config.sh`)
+
+For changing secrets in place without leaving cleartext on normal disk, use
+`edit-encrypted-config.sh new` or `… edit path/to/file.enc.yaml`. It sources
+`keyring/edit-encrypted-common.sh`, uses `keyring/with-sops-dek.sh`, and stages
+plaintext under `dirname(output)` for `path_regex`. See
+**`../keyring/EDIT_ENCRYPT_WORKFLOW.md`**.
+
 ### Helper script (`scripts/encrypt-config.sh`)
 
 With `SECCONFIG_DIR` set and `$SECCONFIG_DIR/.sops.yaml` in place, encrypt a
@@ -168,7 +187,7 @@ plaintext tree file to the matching `*.enc.yaml` next to it:
 
 ```bash
 export SECCONFIG_DIR=/path/to/your/config
-/path/to/util/secconfig/scripts/encrypt-config.sh subdir/myapp.yaml
+/path/to/util/secconfig/scripts/encrypt-config.sh -i subdir/myapp.yaml
 # creates subdir/myapp.enc.yaml
 ```
 
@@ -179,21 +198,23 @@ The script checks the output directory is writable before calling sops. It sets
 
 ### Decrypt helper (`scripts/decrypt-config.sh`)
 
-Print decrypted YAML to stdout (runs `get-dek.sh`, writes the DEK to a
-`/dev/shm` file, sets `SOPS_AGE_KEY_FILE`, then `sops decrypt`). It first
-prints a cleartext warning on stderr and requires typing lowercase `y`
-(default is no):
+Runs **`keyring/with-sops-dek.sh`** (DEK under **`/dev/shm`**, then
+**`sops decrypt --output …`**). **Default output is `/dev/null`** (checks
+decrypt without writing cleartext). Use **`-o /dev/stdout`** or **`-o FILE`**
+when you need the YAML; if stdout is a **terminal**, a cleartext warning and
+**`y`** confirmation are required.
 
 ```bash
 export SECCONFIG_DIR=/path/to/your/config
-/path/to/util/secconfig/scripts/decrypt-config.sh subdir/myapp.enc.yaml
+/path/to/util/secconfig/scripts/decrypt-config.sh -i subdir/myapp.enc.yaml \
+  -o /dev/stdout
 ```
 
 `-k` / `--get-dek` / `GET_DEK_PATH` sets the path to `get-dek.sh`
 (the executable that prints the DEK), not a file that stores the key.
-Default is `../../keyring/get-dek.sh` relative to the script. If
-`$SECCONFIG_DIR/.sops.yaml` exists, it is exported as `SOPS_CONFIG` (same as the
-Python loader). `--help` lists options.
+Default is **`keyring/get-dek.sh`** next to **`with-sops-dek.sh`**. If
+`$SECCONFIG_DIR/.sops.yaml` exists, it is passed as **`with-sops-dek -c`**
+(same as **`load_config()`**). **`--help`** lists options.
 
 ### References
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Output the decrypted DEK to stdout. Usable from Bash or Python.
+# Output the decrypted DEK to a destination you choose (-o/--output).
+# Default is /dev/null (no accidental leak). Use -o /dev/stdout to pipe or
+# capture; use -o FILE for a path (e.g. /dev/shm/...).
 # Exit 1 on failure; errors to stderr.
 #
 # Requires: dek.encrypted to exist (create via rotate-kek.sh when no
@@ -37,8 +39,7 @@ fi
 
 output_file="/dev/null"
 
-# Parse options using getopt for both short and long option names
-OPTS=$(getopt -o o: --long output: -n $(basename "${0}") -- "${@}")
+OPTS=$(getopt -o o: --long output: -n "$(basename "${0}")" -- "${@}")
 if [[ ${?} != 0 ]]; then
     printf '%s\n' "Failed parsing options." >&2
     exit 1
@@ -63,11 +64,13 @@ while true; do
 done
 
 if [[ "${output_file}" == "/dev/null" ]]; then
-    printf '%s\n' "secrets: ${_script_path}: output sent to /dev/null by default. Specify -o <file> to save output, or -o /dev/stdout for stdout." >&2
+    printf '%s\n' \
+      "secrets: ${_script_path}: output sent to /dev/null by default." \
+      " To get output, specify -o <file> or -o /dev/stdout." >&2
 fi
 
-if ! openssl enc -d -aes-256-cbc -pbkdf2 \
-  -pass file:<(printf '%s' "${kek}") -in "${_dek_file}" > "${output_file}" 2>/dev/null; then
+if ! secrets_decrypt_dek_with_kek "${kek}" "${_dek_file}" "${output_file}"; \
+  then
     printf '%s\n' "secrets: ${_script_path}: failed (decrypt)" >&2
     printf '%s\n' 'secrets: wrong KEK or corrupted file' >&2
     kek=''

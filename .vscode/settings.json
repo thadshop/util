@@ -1,0 +1,19 @@
+{
+  "python.analysis.diagnosticMode": "workspace",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/secconfig"
+  ],
+  "pylint.enabled": true,
+  "pylint.importStrategy": "fromEnvironment",
+  "ruff.enable": true,
+  "ruff.lineLength": 80,
+  "[python]": {
+    "editor.rulers": [80]
+  },
+  "shellcheck.enable": true,
+  "shellcheck.executablePath": "${env:HOME}/.local/bin/shellcheck",
+  "shellcheck.run": "onSave",
+  "files.associations": {
+    "*.sh": "shellscript"
+  }
+}

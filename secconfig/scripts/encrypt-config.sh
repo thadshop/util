@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
-# This script encrypts a plaintext YAML file under SECCONFIG_DIR.
-# It uses the .sops.yaml configuration file to determine encryption rules.
-# The encryption process uses public age keys specified in .sops.yaml.
-# The output is written as <name>.enc.yaml next to the input file.
+# Encrypt a plaintext YAML under SECCONFIG_DIR → *.enc.yaml next to input.
+# Uses $SECCONFIG_DIR/.sops.yaml (public age keys in rules; no DEK on encrypt).
+# Same util checkout layout as decrypt-config.sh (see keyring/with-sops-dek.sh).
 
 set -e
 
 usage() {
     printf '%s\n' \
-        "usage: encrypt-config.sh [-f|--force] [--help] <plain.yaml>" >&2
+        "usage: encrypt-config.sh [-f|--force] -i|--input FILE [--help]" >&2
+    printf '%s\n' "" >&2
+    printf '%s\n' \
+        "  -i is required. Plain YAML path relative to \$SECCONFIG_DIR, absolute" >&2
+    printf '%s\n' \
+        "  under that tree, or - / /dev/stdin (staged under \$SECCONFIG_DIR)." >&2
     printf '%s\n' \
         "  SECCONFIG_DIR must name the directory with .sops.yaml." >&2
     printf '%s\n' \
         "  Writes <name>.enc.yaml next to <name>.yaml (or .yml)." >&2
+    printf '%s\n' \
+        "  With stdin, names use a temp basename under \$SECCONFIG_DIR." >&2
 }
 
 _force=0
-# Parse options using getopt for both short and long option names
-OPTS=$(getopt -o fh --long force,help -n $(basename "${0}") -- "${@}")
+_in=""
+_stdin_staged=""
+OPTS=$(getopt -o fhi: --long force,help,input: -n "$(basename "${0}")" -- \
+    "${@}")
 if [[ ${?} != 0 ]]; then
     printf '%s\n' "Failed parsing options." >&2
     exit 1
@@ -29,6 +37,10 @@ while true; do
         -f|--force)
             _force=1
             shift
+            ;;
+        -i|--input)
+            _in="${2}"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -46,9 +58,16 @@ while true; do
     esac
 done
 
-shift $((OPTIND -1))
+if [[ ${#} -ne 0 ]]; then
+    printf '%s\n' \
+        "encrypt-config: unexpected arguments (use -i for input)" >&2
+    usage
+    exit 1
+fi
 
-if [[ ${#} -ne 1 ]]; then
+if [[ -z "${_in}" ]]; then
+    printf '%s\n' \
+        'encrypt-config: -i|--input is required (use - for stdin).' >&2
     usage
     exit 1
 fi
@@ -70,20 +89,27 @@ if [[ ! -f "${_sops_cfg}" ]]; then
     exit 1
 fi
 
-_in="${1}"
-if [[ "${_in}" != /* ]]; then
-    _in="${_root}/${_in}"
-fi
+trap 'rm -f "${_stdin_staged}"' EXIT
 
-if [[ ! -f "${_in}" ]]; then
-    printf '%s\n' "encrypt-config: not a file: ${_in}" >&2
-    exit 1
+if [[ "${_in}" == "-" ]] || [[ "${_in}" == "/dev/stdin" ]]; then
+    _stdin_staged="$(mktemp "${_root}/.encrypt-config-stdin.XXXXXX.yaml")"
+    chmod 600 "${_stdin_staged}"
+    cat > "${_stdin_staged}"
+    _in="${_stdin_staged}"
+elif [[ "${_in}" != /* ]]; then
+    _in="${_root}/${_in}"
 fi
 
 _in="$(cd "$(dirname "${_in}")" && pwd)/$(basename "${_in}")"
 
-if [[ "${_in}" != "${_root}"/* ]]; then
+if [[ -z "${_stdin_staged}" ]] && [[ "${_in}" != "${_root}"/* \
+    ]]; then
     printf '%s\n' 'encrypt-config: file must be under SECCONFIG_DIR' >&2
+    exit 1
+fi
+
+if [[ ! -f "${_in}" ]]; then
+    printf '%s\n' "encrypt-config: not a file: ${_in}" >&2
     exit 1
 fi
 

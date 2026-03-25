@@ -19,7 +19,8 @@ secrets on disk** for that stack.
 ### `secconfig/`
 
 Python package: load **YAML** configs with **sops**-encrypted values (uses
-`keyring/get-dek.sh` for the age key).
+`keyring/get-dek.sh` for the age key). Shell helpers in **`secconfig/scripts/`**
+call **`keyring/with-sops-dek.sh`** for decrypt; expect the full **util** repo.
 
 ```bash
 pip install -e secconfig/

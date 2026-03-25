@@ -98,19 +98,48 @@ secrets_check_keyring() {
     return 0
 }
 
+secrets_decrypt_dek_with_kek() {
+    # Decrypt dek.encrypted using KEK material (e.g. hex hash string).
+    # Args: kek_material, enc_path, [out_path]. If out_path is set, write
+    # cleartext there; otherwise write to stdout. Returns openssl status.
+    local kek_material="${1}"
+    local enc_path="${2}"
+    local out_path="${3-}"
+    if [[ -n "${out_path}" ]]; then
+        openssl enc -d -aes-256-cbc -pbkdf2 \
+          -pass file:<(printf '%s' "${kek_material}") -in "${enc_path}" \
+          > "${out_path}" 2>/dev/null
+    else
+        openssl enc -d -aes-256-cbc -pbkdf2 \
+          -pass file:<(printf '%s' "${kek_material}") -in "${enc_path}" \
+          2>/dev/null
+    fi
+}
+
+secrets_encrypt_dek_with_kek() {
+    # Encrypt DEK plaintext with KEK material; writes dek.encrypted format.
+    # Args: kek_material, dek_plaintext, out_path. Returns openssl status.
+    local kek_material="${1}"
+    local dek_plain="${2}"
+    local out_path="${3}"
+    printf '%s' "${dek_plain}" | openssl enc -aes-256-cbc -salt -pbkdf2 \
+      -pass file:<(printf '%s' "${kek_material}") -out "${out_path}" \
+      2>/dev/null
+}
+
 secrets_test_decryption() {
     # Verify decryption will work (KEK, DEK, optionally secrets-test.enc).
     # Returns 0 if OK, 1 otherwise. Prints to stderr on failure.
     local get_dek="${_SECRETS_DIR}/get-dek.sh"
     local test_enc="${_SECRETS_DIR}/secrets-test.enc"
     local key_file
-    if ! "${get_dek}" >/dev/null; then
+    if ! "${get_dek}"; then
         return 1
     fi
     if [[ -f "${test_enc}" ]] && command -v sops >/dev/null 2>&1; then
         key_file="/dev/shm/secrets-check-key-$$"
         trap 'rm -f "${key_file}" 2>/dev/null' RETURN
-        if ! "${get_dek}" > "${key_file}" 2>/dev/null; then
+        if ! "${get_dek}" -o "${key_file}" 2>/dev/null; then
             return 1
         fi
         chmod 600 "${key_file}"
@@ -244,8 +273,8 @@ secrets_init() {
     if [[ -f "${dek_file}" ]]; then
         key_file="/dev/shm/secrets-init-key-$$"
         trap 'rm -f "${key_file}" 2>/dev/null' RETURN
-        if ! printf '%s' "${hash}" | openssl enc -d -aes-256-cbc -pbkdf2 \
-          -pass fd:0 -in "${dek_file}" > "${key_file}" 2>/dev/null; then
+        if ! secrets_decrypt_dek_with_kek "${hash}" "${dek_file}" \
+          "${key_file}"; then
             _secrets_dek_decrypt_fail "${dek_file_abs}"
             passphrase=''
             passphrase_confirm=''
