@@ -9,20 +9,26 @@ _get_kek="${_script_dir}/get-kek.sh"
 
 usage() {
     printf '%s\n' \
-        "usage: encrypt.sh [-k|--get-kek SCRIPT] [-i|--input FILE] [-o|--output FILE] [--help]" >&2
+      "usage: encrypt.sh [-k|--get-kek SCRIPT] -i|--input FILE" >&2
     printf '%s\n' \
-        "  SCRIPT = path to get-kek.sh (executable). It retrieves the KEK." >&2
+      "                  [-o|--output FILE] [--help]" >&2
+    printf '%s\n' "" >&2
     printf '%s\n' \
-        "  FILE = input/output file for the data. Defaults: /dev/stdin and /dev/null." >&2
+      "  -i is required. Use -i - for stdin (same as /dev/stdin)." >&2
     printf '%s\n' \
-        "  Default SCRIPT: ${_get_kek}" >&2
+      "  -o defaults to /dev/null." >&2
+    printf '%s\n' \
+      "  SCRIPT = path to get-kek.sh (executable). It retrieves the KEK." >&2
+    printf '%s\n' \
+      "  Default SCRIPT: ${_get_kek}" >&2
 }
 
 _get_kek_script=""
-_input_file="/dev/stdin"
+_input_file=""
 _output_file="/dev/null"
 
-OPTS=$(getopt -o k:i:o:h --long get-kek:,input:,output:,help -n $(basename "${0}") -- "${@}")
+OPTS=$(getopt -o k:i:o:h --long get-kek:,input:,output:,help \
+  -n "$(basename "${0}")" -- "${@}")
 if [[ ${?} != 0 ]]; then
     printf '%s\n' "Failed parsing options." >&2
     exit 1
@@ -59,6 +65,22 @@ while true; do
     esac
 done
 
+if [[ ${#} -ne 0 ]]; then
+    printf '%s\n' "encrypt.sh: unexpected arguments (use -i for input)" >&2
+    usage
+    exit 1
+fi
+
+if [[ -z "${_input_file}" ]]; then
+    printf '%s\n' 'encrypt.sh: -i|--input is required (use - for stdin).' >&2
+    usage
+    exit 1
+fi
+
+if [[ "${_input_file}" == "-" ]]; then
+    _input_file="/dev/stdin"
+fi
+
 if [[ -z "${_get_kek_script}" ]]; then
     _get_kek_script="${_get_kek}"
 fi
@@ -80,5 +102,6 @@ if ! "${_get_kek_script}" -o "${_kek_file}"; then
     exit 1
 fi
 
-openssl enc -aes-256-cbc -salt -in "${_input_file}" -out "${_output_file}" -pass file:"${_kek_file}"
-printf '%s\n' "Encrypted ${_input_file} to ${_output_file}"
+openssl enc -aes-256-cbc -salt -in "${_input_file}" -out "${_output_file}" \
+    -pass file:"${_kek_file}"
+printf '%s\n' "Encrypted (input) to ${_output_file}"

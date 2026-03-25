@@ -8,23 +8,6 @@ _dek_file="${_script_dir}/dek.encrypted"
 # shellcheck source=lib.sh
 source "${_script_dir}/lib.sh"
 
-# Encrypt DEK with KEK using openssl
-_secrets_encrypt_dek() {
-    local kek="${1}"
-    local dek="${2}"
-    local out_file="${3}"
-    printf '%s' "${dek}" | openssl enc -aes-256-cbc -salt -pbkdf2 \
-        -pass file:<(printf '%s' "${kek}") -out "${out_file}"
-}
-
-# Decrypt DEK with KEK
-_secrets_decrypt_dek() {
-    local kek="${1}"
-    local enc_file="${2}"
-    openssl enc -d -aes-256-cbc -pbkdf2 \
-        -pass file:<(printf '%s' "${kek}") -in "${enc_file}" 2>/dev/null
-}
-
 # Rotate KEK
 _secrets_rotate_kek() {
     if ! secrets_no_debug; then
@@ -50,7 +33,7 @@ _secrets_rotate_kek() {
     fi
 
     if [[ -f "${_dek_file}" ]]; then
-        dek=$(_secrets_decrypt_dek "${old_kek}" "${_dek_file}")
+        dek=$(secrets_decrypt_dek_with_kek "${old_kek}" "${_dek_file}")
         if [[ -z "${dek}" ]] || \
           ! [[ "${dek}" =~ ^AGE-SECRET-KEY-1.+ ]]; then
             printf '%s\n' "secrets: failed to decrypt DEK at ${_dek_file}" \
@@ -116,7 +99,8 @@ _secrets_rotate_kek() {
         return 1
     fi
 
-    if ! _secrets_encrypt_dek "${new_kek}" "${dek}" "${_dek_file}"; then
+    if ! secrets_encrypt_dek_with_kek "${new_kek}" "${dek}" "${_dek_file}"; \
+      then
         printf '%s\n' "secrets: failed to encrypt DEK at ${_dek_file}" >&2
         new_kek=''
         old_kek=''

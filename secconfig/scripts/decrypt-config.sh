@@ -1,29 +1,47 @@
 #!/usr/bin/env bash
-# This script decrypts a sops-encrypted YAML file under SECCONFIG_DIR.
-# It uses get-dek.sh to retrieve the DEK (Data Encryption Key),
-# which is stored temporarily in /dev/shm for security.
-# The SOPS_AGE_KEY_FILE environment variable is set to point to the DEK.
-# The decrypted YAML is printed to stdout in cleartext.
+# Decrypt a sops-encrypted YAML under SECCONFIG_DIR.
+# DEK / sops env: keyring/with-sops-dek.sh (hard dependency on util checkout).
+# Default: decrypted YAML goes to /dev/null (verify only). Use -o to capture.
 
 set -e
 
 _script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_default_get_dek_script="${_script_dir}/../../keyring/get-dek.sh"
+_keyring_dir="$(cd "${_script_dir}/../../keyring" && pwd)"
+_default_get_dek_script="${_keyring_dir}/get-dek.sh"
+_with_sops_dek="${_keyring_dir}/with-sops-dek.sh"
 
 usage() {
     printf '%s\n' \
-        "usage: decrypt-config.sh [-k|--get-dek SCRIPT] [--help] <file.enc.yaml>" >&2
+      "usage: decrypt-config.sh [-k|--get-dek SCRIPT] -i|--input FILE" >&2
     printf '%s\n' \
-        "  SCRIPT = path to get-dek.sh (executable). It prints the DEK." >&2
+      "                         [-o|--output FILE] [--help]" >&2
+    printf '%s\n' "" >&2
     printf '%s\n' \
-        "  SECCONFIG_DIR must name your config root (optional .sops.yaml)." >&2
+      "  -i is required. Sops file: path relative to \$SECCONFIG_DIR, absolute" \
+      >&2
     printf '%s\n' \
-        "  Default SCRIPT: ${_default_get_dek_script}" >&2
+      "  under that tree, or - / /dev/stdin (spooled to /dev/shm for sops)." >&2
+    printf '%s\n' \
+      "  Example: decrypt-config.sh -i copy-of-test.enc.yaml -o /dev/stdout" >&2
+    printf '%s\n' "" >&2
+    printf '%s\n' \
+      "  SCRIPT = path to get-dek.sh (passed to keyring/with-sops-dek.sh)." \
+      >&2
+    printf '%s\n' \
+      "  Default output: /dev/null. Use -o /dev/stdout or -o FILE for YAML." >&2
+    printf '%s\n' \
+      "  SECCONFIG_DIR must name your config root (optional .sops.yaml)." >&2
+    printf '%s\n' \
+      "  Default SCRIPT: ${_default_get_dek_script}" >&2
 }
 
 _get_dek_script=""
-# Parse options using getopt for both short and long option names
-OPTS=$(getopt -o k:h --long get-dek:,help -n $(basename "${0}") -- "${@}")
+_in=""
+_output_file="/dev/null"
+_stdin_tmp=""
+
+OPTS=$(getopt -o k:i:o:h --long get-dek:,input:,output:,help \
+  -n "$(basename "${0}")" -- "${@}")
 if [[ ${?} != 0 ]]; then
     printf '%s\n' "Failed parsing options." >&2
     exit 1
@@ -34,6 +52,14 @@ while true; do
     case "${1}" in
         -k|--get-dek)
             _get_dek_script="${2}"
+            shift 2
+            ;;
+        -i|--input)
+            _in="${2}"
+            shift 2
+            ;;
+        -o|--output)
+            _output_file="${2}"
             shift 2
             ;;
         -h|--help)
@@ -52,9 +78,16 @@ while true; do
     esac
 done
 
-shift $((OPTIND -1))
+if [[ ${#} -ne 0 ]]; then
+    printf '%s\n' \
+        "decrypt-config: unexpected arguments (use -i for input)" >&2
+    usage
+    exit 1
+fi
 
-if [[ ${#} -ne 1 ]]; then
+if [[ -z "${_in}" ]]; then
+    printf '%s\n' \
+        'decrypt-config: -i|--input is required (use - for stdin).' >&2
     usage
     exit 1
 fi
@@ -79,12 +112,33 @@ if [[ ! -x "${_get_dek_script}" ]]; then
     exit 1
 fi
 
+if [[ ! -x "${_with_sops_dek}" ]]; then
+    printf '%s\n' \
+      "decrypt-config: with-sops-dek.sh not executable: ${_with_sops_dek}" >&2
+    exit 1
+fi
+
 _root="$(cd "${SECCONFIG_DIR}" && pwd)"
 _sops_cfg="${_root}/.sops.yaml"
 
-_in="${1}"
-if [[ "${_in}" != /* ]]; then
+trap 'rm -f "${_stdin_tmp}"' EXIT
+
+if [[ "${_in}" == "-" ]] || [[ "${_in}" == "/dev/stdin" ]]; then
+    _stdin_tmp="$(mktemp /dev/shm/decrypt-config-in.XXXXXX.yaml)"
+    chmod 600 "${_stdin_tmp}"
+    cat > "${_stdin_tmp}"
+    _in="${_stdin_tmp}"
+elif [[ "${_in}" != /* ]]; then
     _in="${_root}/${_in}"
+fi
+
+_in="$(cd "$(dirname "${_in}")" && pwd)/$(basename "${_in}")"
+
+if [[ -z "${_stdin_tmp}" ]]; then
+    if [[ "${_in}" != "${_root}"/* ]]; then
+        printf '%s\n' 'decrypt-config: file must be under SECCONFIG_DIR' >&2
+        exit 1
+    fi
 fi
 
 if [[ ! -f "${_in}" ]]; then
@@ -92,41 +146,50 @@ if [[ ! -f "${_in}" ]]; then
     exit 1
 fi
 
-_in="$(cd "$(dirname "${_in}")" && pwd)/$(basename "${_in}")"
-
-if [[ "${_in}" != "${_root}"/* ]]; then
-    printf '%s\n' 'decrypt-config: file must be under SECCONFIG_DIR' >&2
-    exit 1
+if [[ "${_output_file}" == "/dev/null" ]]; then
+    printf '%s\n' \
+      'decrypt-config: decrypted YAML sent to /dev/null by default.' \
+      ' Use -o /dev/stdout or -o FILE to capture.' >&2
+elif [[ "${_output_file}" == "/dev/stdout" ]] && [[ -t 1 ]]; then
+    printf '%s\n' '' >&2
+    printf '%s\n' \
+      'decrypt-config: decrypted YAML will be printed to stdout in CLEARTEXT.' \
+      >&2
+    printf '%s\n' \
+      '  Secrets may appear in terminal scrollback, logs, or downstream pipes.' \
+      >&2
+    printf '%s\n' '' >&2
+    printf '%s' 'Proceed? [y/N] ' >&2
+    read -r _reply
+    if [[ "${_reply}" != y ]]; then
+        printf '%s\n' 'decrypt-config: cancelled' >&2
+        exit 1
+    fi
+else
+    _out_dir="$(dirname "${_output_file}")"
+    if [[ ! -d "${_out_dir}" ]]; then
+        printf '%s\n' \
+          "decrypt-config: output directory missing: ${_out_dir}" >&2
+        exit 1
+    fi
+    if [[ ! -w "${_out_dir}" ]]; then
+        printf '%s\n' \
+          "decrypt-config: output directory not writable: ${_out_dir}" >&2
+        exit 1
+    fi
 fi
 
-printf '%s\n' '' >&2
-printf '%s\n' \
-  'decrypt-config: decrypted YAML will be printed to stdout in CLEARTEXT.' \
-  >&2
-printf '%s\n' \
-  '  Secrets may appear in terminal scrollback, logs, or downstream pipes.' \
-  >&2
-printf '%s\n' '' >&2
-printf '%s' 'Proceed? [y/N] ' >&2
-read -r _reply
-if [[ "${_reply}" != y ]]; then
-    printf '%s\n' 'decrypt-config: cancelled' >&2
-    exit 1
-fi
-
-_key_file="/dev/shm/secconfig-decrypt-key-$$"
-trap 'rm -f "${_key_file}" 2>/dev/null' EXIT
-
-if ! "${_get_dek_script}" > "${_key_file}"; then
-    printf '%s\n' 'decrypt-config: get-dek.sh failed' >&2
-    exit 1
-fi
-chmod 600 "${_key_file}"
-
-unset SOPS_AGE_KEY 2>/dev/null || true
-export SOPS_AGE_KEY_FILE="${_key_file}"
+_wsdc=(-k "${_get_dek_script}")
 if [[ -f "${_sops_cfg}" ]]; then
-    export SOPS_CONFIG="${_sops_cfg}"
+    _wsdc+=(-c "${_sops_cfg}")
 fi
 
-sops decrypt "${_in}"
+if ! "${_with_sops_dek}" "${_wsdc[@]}" -- \
+    sops decrypt --output "${_output_file}" "${_in}"; then
+    printf '%s\n' 'decrypt-config: sops decrypt failed' >&2
+    exit 1
+fi
+
+if [[ "${_output_file}" == "/dev/null" ]]; then
+    printf '%s\n' 'decrypt-config: decryption OK (YAML discarded).' >&2
+fi

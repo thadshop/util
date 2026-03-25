@@ -23,7 +23,7 @@ fi
 # Get DEK, write to /dev/shm, extract public key
 _key_file="/dev/shm/secconfig-age-key-$$"
 trap 'rm -f "${_key_file}"' EXIT
-"${_get_dek}" > "${_key_file}"
+"${_get_dek}" -o "${_key_file}"
 chmod 600 "${_key_file}"
 
 _public_key=$(age-keygen -y "${_key_file}")

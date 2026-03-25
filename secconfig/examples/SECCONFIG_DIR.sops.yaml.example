@@ -1,9 +1,9 @@
 # Copy this file to:  $SECCONFIG_DIR/.sops.yaml
 # Replace age1... below with your age public key, e.g.:
-#   path/to/keyring/get-dek.sh | age-keygen -y /dev/stdin
+#   path/to/keyring/get-dek.sh -o /dev/stdout | age-keygen -y /dev/stdin
 #
 # Encrypt plain *.yaml under SECCONFIG_DIR:
-#   SECCONFIG_DIR=... path/to/secconfig/scripts/encrypt-config.sh rel/path.yaml
+#   SECCONFIG_DIR=... path/to/secconfig/scripts/encrypt-config.sh -i rel/path.yaml
 #
 # YAML supports comments: any line starting with #, or text after # on a
 # line (outside quotes).

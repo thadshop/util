@@ -55,7 +55,7 @@ After sourcing, the KEK is in your keyring. To retrieve it in scripts:
 
 ```bash
 # Bash: use helper script (works from any directory)
-kek=$(/path/to/util/keyring/get-kek.sh) || exit 1
+kek=$(/path/to/util/keyring/get-kek.sh -o /dev/stdout) || exit 1
 
 # Or source the library and call directly
 source /path/to/util/keyring/lib.sh
@@ -64,9 +64,26 @@ kek=$(secrets_get_kek) || exit 1
 
 **Helper scripts** (in this directory):
 
-- `get-kek.sh` — Output KEK to stdout. Use from Bash or Python.
-- `get-dek.sh` — Output decrypted DEK to stdout (for sops/age).
+- `get-kek.sh` — Output KEK; default `-o /dev/null`. Use `-o /dev/stdout` (or
+  a file) when you need the material.
+- `get-dek.sh` — Output decrypted DEK (for sops/age); same `-o` semantics as
+  `get-kek.sh`.
+- `with-sops-dek.sh` — Run a command with **`SOPS_AGE_KEY_FILE`** set from
+  **`get-dek.sh`** (tmp under **`/dev/shm`**), optionally **`SOPS_CONFIG`**
+  from **`-c`**. **`secconfig/scripts/decrypt-config.sh`** and future workflows
+  should use this so DEK handling stays in **keyring**.
+- `edit-encrypted-common.sh` — Shared prompts (sourced; not run alone) for the
+  two edit workflows below.
+- `edit-encrypted.sh` — Interactive **new** / **edit** for **`encrypt.sh`**
+  / **`decrypt.sh`** (OpenSSL + KEK): cleartext only under **`/dev/shm`**,
+  validate decrypt to **`/dev/null`**, backup prompts on **edit**. For
+  **sops** profiles, use **`secconfig/scripts/edit-encrypted-config.sh`**.
+  See **`EDIT_ENCRYPT_WORKFLOW.md`** in this directory.
 - `rotate-kek.sh` — Rotate KEK and re-encrypt DEK. Creates DEK if missing.
+- `encrypt.sh` / `decrypt.sh` — OpenSSL AES helpers using the KEK; **`-i`**
+  **FILE** is required (**`-`** or **`/dev/stdin`** for stdin); **`-o`** defaults
+  to **`/dev/null`** for both (no accidental cleartext on the terminal for
+  **`decrypt.sh`** unless you set **`-o`**).
 - `test-decryption.sh` — Test decryption will work. Exits 0 if OK, 1 otherwise.
 
 ## Keyring key name
