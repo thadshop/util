@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+# Merge into $SECCONFIG_DIR/.sops.yaml  (do not commit real age keys)
+# ---------------------------------------------------------------------------
+# sops uses the FIRST creation_rules entry whose path_regex matches the path
+# of the file you pass to  sops -e  (the plaintext INPUT), not --output.
+# Put this block BEFORE any broad catch-all (e.g. .*\.yaml$) in your file.
+#
+# Public age key: e.g.  path/to/util/keyring/get-age-public-key.sh
+#
+# This rule covers:
+#   - Named plaintext inputs:  tokmint/<profile>.plain.yaml
+#   - edit-encrypted-config.sh  temp plaintext under tokmint/
+# Ciphertext on disk for tokmint:  tokmint/<profile>.enc.yaml
+#
+# Only key NAMES token_value and client_secret are encrypted (any depth).
+# Add more alternates inside encrypted_regex if you introduce other secret
+# leaf keys (e.g. a dedicated suffix pattern). Do NOT use a bare  value  key:
+# it would match every  value:  in the file (e.g. oauth headers).
+
+creation_rules:
+  - path_regex: >-
+      .*/tokmint/(\.edit-staging-plain\..*\.ya?ml|.*\.plain\.ya?ml)$
+    encrypted_regex: ^(token_value|client_secret)$
+    age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY

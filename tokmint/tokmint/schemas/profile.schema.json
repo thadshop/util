@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tokmint.local/schemas/profile.schema.json",
+  "title": "tokmint profile",
+  "description": "YAML profile for tokmint (Mode A static tokens, Mode B OAuth). Runtime may ignore keys not listed here (forward compatibility); this schema is strict for authoring and CI.",
+  "type": "object",
+  "required": ["bases"],
+  "additionalProperties": false,
+  "properties": {
+    "oauth": {
+      "$ref": "#/$defs/oauth"
+    },
+    "bases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/baseRow"
+      }
+    }
+  },
+  "$defs": {
+    "oauth": {
+      "type": "object",
+      "required": ["endpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path-absolute token endpoint (e.g. /oauth2/default/v1/token).",
+          "pattern": "^/"
+        },
+        "request_headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/headerPair"
+          }
+        }
+      }
+    },
+    "headerPair": {
+      "type": "object",
+      "required": ["key", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "baseRow": {
+      "type": "object",
+      "required": ["base_url"],
+      "additionalProperties": false,
+      "properties": {
+        "base_url": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Matched to request base_url after canonicalization in app code."
+        },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/staticToken"
+          }
+        },
+        "clients": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/oauthClient"
+          }
+        }
+      }
+    },
+    "staticToken": {
+      "type": "object",
+      "required": ["token_id", "token_value"],
+      "additionalProperties": false,
+      "properties": {
+        "token_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Single path segment style id (alphanumeric, _, -).",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "token_value": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Secret; may be sops-encrypted in file."
+        }
+      }
+    },
+    "oauthClient": {
+      "type": "object",
+      "required": ["client_id"],
+      "additionalProperties": false,
+      "properties": {
+        "client_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "client_secret": {
+          "type": "string",
+          "minLength": 1,
+          "description": "For shared-secret OAuth; omit when using signing_keys only."
+        },
+        "scopes": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reserved for fixed token-request scopes (Mode B)."
+        },
+        "signing_keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/signingKey"
+          }
+        }
+      }
+    },
+    "signingKey": {
+      "type": "object",
+      "required": ["key_id", "encrypted_pem_path"],
+      "additionalProperties": false,
+      "properties": {
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "description": "Matches query parameter key_id."
+        },
+        "encrypted_pem_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to OpenSSL ciphertext (e.g. under SECCONFIG_DIR)."
+        }
+      }
+    }
+  }
+}

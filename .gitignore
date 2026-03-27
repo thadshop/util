@@ -1,3 +1,6 @@
+# Local scratch (repo root)
+/.tmp/
+
 # Python
 __pycache__/
 *.py[cod]

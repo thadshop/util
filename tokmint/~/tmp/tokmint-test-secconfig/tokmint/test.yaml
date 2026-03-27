@@ -1,0 +1,6 @@
+bases:
+  - base_url: https://tenant.example.com
+    tokens:
+      - token_id: default
+        token_value: my-local-secret-token
+
