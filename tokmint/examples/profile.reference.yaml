@@ -1,0 +1,70 @@
+# Reference profile layout for tokmint (all intended use cases).
+# Formal schema: tokmint/schemas/profile.schema.json (JSON Schema, Draft 2020-12).
+# Encrypt to $SECCONFIG_DIR/tokmint/{profile}.enc.yaml (see tokmint/README.md).
+# Remove sections you do not need. Secrets may be plain (local-only) or
+# sops-encrypted via secconfig.
+#
+# Request mapping (query params are NOT flat YAML keys at top level):
+#   profile   -> picks: {TOKMINT_SECCONFIG_SUBDIR}/{profile}.enc.yaml
+#   base_url  -> must match one bases[].base_url (after canonicalization)
+# Mode A: client_id and key_id unset; token_id selects a tokens[] entry on the
+#         row that matched base_url.
+# Mode B: client_id set; token_id unset. key_id unset -> client_secret for that
+#         client. key_id set -> signing_keys[] entry with that key_id (PEM via
+#         keyring encrypt.sh ciphertext).
+#
+# Implementation note: Phase 1 only uses bases + tokens; oauth and clients are
+# ignored until Mode B / JWT phases land.
+
+# -----------------------------------------------------------------------------
+# OAuth / token endpoint (Mode B). Optional for Mode A-only profiles.
+# token URL = urljoin(canonical(base_url), oauth.endpoint)
+# -----------------------------------------------------------------------------
+oauth:
+  endpoint: /oauth2/default/v1/token
+  request_headers:
+    - key: Accept
+      value: application/json
+    # value may be sops-encrypted if it carries a secret
+    - key: Content-Type
+      value: application/x-www-form-urlencoded
+
+# -----------------------------------------------------------------------------
+# One row per tenant / origin (canonical base_url identity).
+# Same profile file may list static tokens AND OAuth clients for the same base;
+# the active mode is chosen per request (A vs B), not by the file alone.
+# -----------------------------------------------------------------------------
+bases:
+  - base_url: https://dev-12345.okta.com
+
+    # --- Mode A: static API tokens (SSWS, vendor API keys, etc.) ------------
+    tokens:
+      - token_id: default
+        token_value: replace-or-sops-encrypt
+      - token_id: automation
+        token_value: replace-or-sops-encrypt
+
+    # --- Mode B: OAuth clients for this base_url ----------------------------
+    clients:
+      # Client credentials with shared secret (Phase 2 intent)
+      - client_id: 0oa_example_client_secret
+        client_secret: replace-or-sops-encrypt
+        # Optional: fixed scopes for token POST (when implementation supports)
+        # scopes: okta.apps.read okta.users.read
+
+      # Private-key JWT (Phase 3 intent): query key_id selects signing_keys row
+      - client_id: 0oa_example_private_jwt
+        # client_secret omitted when using only signing_keys + key_id query
+        signing_keys:
+          - key_id: primary
+            # Path to ciphertext from keyring/encrypt.sh (relative to
+            # SECCONFIG_DIR recommended; absolute paths allowed if documented)
+            encrypted_pem_path: tokmint/keys/okta-primary.pem.enc
+          - key_id: rotation
+            encrypted_pem_path: tokmint/keys/okta-rotation.pem.enc
+
+  - base_url: https://partner.example.com
+    tokens:
+      - token_id: default
+        token_value: replace-or-sops-encrypt
+    # clients: []  # optional; omit entire key if unused
