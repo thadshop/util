@@ -56,7 +56,7 @@ Equivalent:
 ## Example request
 
 ```bash
-curl -s -X POST 'http://127.0.0.1:9876/v1/token?profile=test&base_url=https://tenant.example.com&token_id=default'
+curl -s -X POST 'http://127.0.0.1:9876/v1/token?profile=test&domain=tenant.example.com&token_id=default'
 ```
 
 ## SOPS-encrypted profile (manual test)
@@ -64,7 +64,7 @@ curl -s -X POST 'http://127.0.0.1:9876/v1/token?profile=test&base_url=https://te
 **`.sops.yaml` for `tokmint/`:** copy patterns from
 **`examples/dot.sops.yaml.tokmint.example`** into **`$SECCONFIG_DIR/.sops.yaml`**
 (order matters: put **before** any broad `.*\.yaml$` rule). It encrypts only
-keys named **`token_value`** and **`client_secret`**.
+keys named **`credential`** and **`client_secret`**.
 
 Tokmint loads profiles through **`secconfig.load_config`**, which decrypts
 **sops** files the same way as plain YAML. Requirements match
@@ -76,7 +76,7 @@ keyring).
 when run under **`SECCONFIG_DIR`**; that output path is what tokmint loads for
 **`profile=test`**.
 
-Example: encrypt only the **`token_value`** field (plaintext input must match
+Example: encrypt only the **`credential`** field (plaintext input must match
 **`path_regex`** — here **`tokmint/test.plain.yaml`**):
 
 ```bash
@@ -86,11 +86,12 @@ mkdir -p "${SECCONFIG_DIR}/tokmint"
 
 # Plain profile (input file for sops -e)
 cat > "${SECCONFIG_DIR}/tokmint/test.plain.yaml" <<'EOF'
-bases:
-  - base_url: https://tenant.example.com
+domains:
+  - domain: tenant.example.com
     tokens:
-      - token_id: default
-        token_value: my-sops-secret
+      Bearer:
+        - token_id: default
+          credential: my-sops-secret
 EOF
 
 # Age public key from your DEK (same as secconfig examples)
@@ -103,7 +104,7 @@ _pub="$(age-keygen -y "${_key}")"
 cat > "${SECCONFIG_DIR}/.sops.yaml" <<EOF
 creation_rules:
   - path_regex: .*tokmint/test\.plain\.yaml\$
-    encrypted_regex: '^token_value\$'
+    encrypted_regex: '^credential\$'
     age: ${_pub}
 EOF
 

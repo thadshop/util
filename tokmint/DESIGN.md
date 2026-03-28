@@ -79,8 +79,8 @@ sops-encrypted** like any other secconfig YAML.
 
 | Key         | Phase 1                   | Purpose                                                                               |
 | ----------- | ------------------------- | ------------------------------------------------------------------------------------- |
-| `**bases`** | required (non-empty list) | One object per tenant / base URL.                                                     |
-| `**oauth**` | optional object           | Mode B: `**endpoint**` + optional `**request_headers**`. Ignored in Phase 1 / Mode A. |
+| `**domains`** | required (non-empty list) | One object per tenant / domain (hostname).                                             |
+| `**oauth**` | optional object           | Mode B: `**token_path**` + optional `**request_headers**`. Ignored in Phase 1 / Mode A. |
 
 
 ### `oauth` (optional)
@@ -90,13 +90,13 @@ All OAuth **token-endpoint** settings for this profile live under one key.
 
 | Child key             | Mode B                 | Purpose                                            |
 | --------------------- | ---------------------- | -------------------------------------------------- |
-| `**endpoint`**        | required for token URL | Path-absolute; see **Token URL joining (Mode B)**. |
+| `**token_path`**      | required for token URL | Path-absolute; appended to `https://` + **`domain`**; see **Token URL joining (Mode B)**. |
 | `**request_headers`** | optional list          | Extra HTTP headers on that token request.          |
 
 
 If `**oauth**` is **absent**, Mode B cannot be used for this profile until it
 is added (Phase 1 static-only files may omit `**oauth`** entirely). If
-`**oauth**` is present but `**endpoint**` is missing when Mode B runs,
+`**oauth**` is present but `**token_path**` is missing when Mode B runs,
 `**400**` / config error at load — pick at implementation.
 
 `**oauth.request_headers`:** each list item is an object with:
@@ -104,7 +104,7 @@ is added (Phase 1 static-only files may omit `**oauth`** entirely). If
 - `**key`** (string) — HTTP header **name** (e.g. `Accept`, `Content-Type`).
 Compare **case-insensitively** when detecting duplicates.
 - `**value`** (string) — HTTP header **value**; may be **sops-encrypted** like
-`**token_value`** if it carries a secret (e.g. vendor-specific API key).
+`**credential`** if it carries a secret (e.g. vendor-specific API key).
 
 **Semantics (Mode B, when implemented):** these headers are sent on the OAuth
 token POST (or the HTTP method we end up using for that profile). **tokmint**
@@ -120,114 +120,98 @@ Azure vs SailPoint, etc.). YAML anchors can deduplicate across files if needed.
 `oauth`** should be **ignored** by tokmint (TBD at implementation; prefer
 ignore).
 
-### Each `bases[]` entry
+### Each `domains[]` entry
 
 
-| Key            | Phase 1            | Purpose                                                  |
-| -------------- | ------------------ | -------------------------------------------------------- |
-| `**base_url`** | required           | Row identity; matched to request (see below).            |
-| `**tokens**`   | optional list      | Mode A: `{ token_id, token_value }` objects (see below). |
-| `**clients**`  | ignored in Phase 1 | Phase 2+: Mode B OAuth clients (shape TBD).              |
+| Key           | Phase 1            | Purpose                                                  |
+| ------------- | ------------------ | -------------------------------------------------------- |
+| `**domain`**  | required           | Row identity: ASCII hostname, no scheme (see below).    |
+| `**tokens**`  | optional mapping   | Mode A: auth_scheme → list of `{ token_id, credential }` (see below). |
+| `**clients**` | ignored in Phase 1 | Phase 2+: Mode B OAuth clients (shape TBD).              |
 
 
-`**tokens` list (Phase 1):** each item must have:
+`**tokens**` **mapping (Phase 1):** keys are **HTTP Authorization schemes**
+(e.g. **`SSWS`**, **`Bearer`**). Each key maps to a **non-empty list** of
+objects; each object has:
 
 - `**token_id`** (string) — matches the request query parameter of the same
-name; same character rules as safe config identifiers (alphanumeric, `_`,
-`-` — exact regex at implementation).
-- `**token_value**` (string) — the secret; typically **sops-encrypted** in the
-file (or plain for local-only files). This is what becomes `**access_token`**
-in the JSON response (no extra indirection).
+  name; same character rules as safe config identifiers (alphanumeric, `_`,
+  `-` — exact regex at implementation).
+- `**credential**` (string) — the secret; typically **sops-encrypted** in the
+  file (or plain for local-only files). Becomes **`access_token`** in the JSON
+  response.
 
-For **Phase 1 / Mode A**, the matching `**bases[]`** row must exist and **some
-list element** must have `**token_id`** equal to the request (after the same
-trim rules as query params). **Duplicate `token_id`** within one row’s
-`**tokens**` list is invalid config — reject at **load**.
+Scheme keys use the same character rules as schemes (letter first, then
+letters, digits, **`+`**, **`.`**, **`-`**).
 
-**Rationale for a list (not a map):** `**token_id`** stays an explicit field
-alongside `**token_value**`, so the schema reads as named pairs and stays
-symmetric if later entries gain optional fields (e.g. label, scope hint)
-without overloading map keys.
+For **Phase 1 / Mode A**, the matching `**domains[]`** row must exist and **some
+list entry under some scheme key** must have **`token_id`** equal to the request
+(after the same trim rules as query params). **`token_id`** must be **unique
+within that domain row across all scheme keys** — duplicates invalid config,
+reject at **load**.
 
-**Duplicate canonical `base_url`:** invalid config — reject at **load** (or
+**Rationale:** grouping by scheme avoids repeating **`SSWS`** (or **`Bearer`**)
+on every token when most rows share one scheme.
+
+**Duplicate canonical `domain`:** invalid config — reject at **load** (or
 first request) with a clear error; do not pick a random row.
 
-### `base_url` matching
+### `domain` matching
 
-Request query `**base_url`** and each YAML `**base_url**` use the **same**
+Request query `**domain`** and each YAML `**domain`** use the **same**
 **canonicalization** function before comparison (string equality on the
 result).
 
-#### Canonical `base_url` algorithm (v1)
+#### Canonical `domain` algorithm (v1)
 
 **Input:** a single string (after query-parameter trim rules for the request).
 
 1. **Trim** leading and trailing **ASCII whitespace** only.
-2. **Parse** with `**urllib.parse.urlparse`** (or equivalent RFC 3986 parser).
-3. **Reject (`400` invalid `base_url`)** when any of:
-  - empty after trim;
-  - **scheme** or **netloc** (authority) missing;
-  - **userinfo** present (`username` / `password` from the parser, or `**@`**
-  in the authority in a way that indicates userinfo);
-  - **query** non-empty or **fragment** non-empty (no `?…` or `#…` in
-  `**base_url`**);
-  - **scheme** not `**http`** or `**https**` (lowercase comparison).
-4. **Scheme:** normalize to **lowercase** (`https`, `http`).
-5. **Host:** use the parser’s **hostname** (not raw netloc). Compare
-  **case-insensitively** for ASCII; **internationalized domain names** use
-   **punycode** / **IDNA** normalization in the implementation so different
-   spellings of the same host match.
-6. **Port:** effective port = parsed port if present, else default for scheme
-  (**443** for **https**, **80** for **http**). **Omit** the port from the
-   canonical string when it equals that default (`**https://host`** and
-   `**https://host:443**` both canonicalize the same).
-7. **Path:**
-  - If missing, empty, or exactly `**/`** → canonical path is **no path**
-   (empty path segment in the canonical string — i.e. **origin only**, no
-   trailing slash after the authority).
-  - Otherwise the path must be **absolute** (start with `**/`**); **strip
-  trailing `/`** only (so `**/api/**` and `**/api**` match). Reject
-  `**400**` if the path is not absolute or is otherwise unusable (e.g.
-  contains `**..**` segments — implementation may normalize or reject;
-  **reject** is simpler for v1).
-8. **Build** the **canonical comparison string:** `**scheme` + `://` + `host`**
-  (with **IPv6** in brackets per URL rules) **+ `:` + port** only when the
-   effective port is **not** the scheme default, **+ `path`**. For **origin
-   only**, `**path`** is empty (no `**/**` after the authority — e.g.
-   `**https://example.com**`, not `**https://example.com/**`). For a non-empty
-   path, use an **absolute** path **without** a trailing `**/`**.
+2. **Reject (`400` invalid `domain`)** when empty after trim.
+3. **ASCII only:** reject any code point outside **ASCII** (no IDN / punycode
+   in v1).
+4. **Lowercase** the entire string (DNS hostname comparison is case-insensitive
+   for ASCII labels).
+5. Repeatedly strip a **trailing DNS root dot** if present (e.g.
+   `tenant.example.com.` → `tenant.example.com`).
+6. **Reject** if `**..**` appears or the string is empty after the steps above.
+7. **Labels:** split on **`.`**. Each label must be **1–63** characters; each
+   character must be **ASCII** alphanumeric or **`-`**; a label must not start
+   or end with **`-`**.
+8. The **canonical comparison string** is the result (hostname only: no
+   scheme, no port, no path).
 
 **Examples (conceptual):**
 
 
-| Input                          | Canonical string              |
-| ------------------------------ | ----------------------------- |
-| `HTTPS://Tenant.Okta.Com/`     | `https://tenant.okta.com`     |
-| `https://tenant.okta.com:443`  | `https://tenant.okta.com`     |
-| `https://tenant.okta.com/api/` | `https://tenant.okta.com/api` |
+| Input                     | Canonical string      |
+| ------------------------- | --------------------- |
+| `Tenant.Okta.Com`         | `tenant.okta.com`     |
+| `tenant.example.com.`     | `tenant.example.com` |
 
 
-**Matching:** a `**bases[]`** row matches when its YAML `**base_url**`
-canonicalizes to the **same** string as the request `**base_url`**.
+**Matching:** a `**domains[]`** row matches when its YAML **`domain`**
+canonicalizes to the **same** string as the request **`domain`**.
 
-**Duplicate canonical `base_url`** in one profile file: invalid config — reject
+**Duplicate canonical `domain`** in one profile file: invalid config — reject
 at **load** (already stated above).
 
-**No row matches:** `**404`** (unknown base for this profile).
+**No row matches:** `**404`** (unknown domain for this profile).
 
-**No matching `token_id` in that row’s `tokens` list:** `**400`** (unknown
-token for that base).
+**No matching `token_id` under that row’s `tokens` mapping:** `**400`**
+(unknown token for that domain).
 
 ### Token URL joining (Mode B)
 
 The **OAuth token request URL** is built from:
 
-1. `**B`** — the **canonical comparison string** for the request `**base_url`**
-  (same algorithm as `**base_url` matching**).
-2. `**E`** — `**oauth.endpoint**` from the profile, after trim and validation
+1. `**B`** — `**https://` +** the **canonical `domain`** string from the
+  request (same algorithm as **`domain` matching**). HTTPS is **assumed** for
+  the IdP host; `**domain`** does not carry a scheme.
+2. `**E`** — `**oauth.token_path**` from the profile, after trim and validation
   below.
 
-#### Validating `**oauth.endpoint**`
+#### Validating `**oauth.token_path**`
 
 After **ASCII trim**:
 
@@ -246,50 +230,49 @@ reference resolution).
 
 **Semantics:** a path-absolute `**E`** replaces the **path** (and clears query
 on the base) relative to `**B`’s scheme and authority** — i.e. it is resolved
-from the **host root**, not appended under `**B`’s path segment**.
+from the **host root**.
 
-**Operator note:** Issuers like **Okta** use an **origin-only** `**base_url`**
-(e.g. `**https://dev-123.okta.com**`) and an `**endpoint**` under the host root
-(e.g. `**/oauth2/default/v1/token**`). If `**B**` includes a **non-empty path**
-(e.g. `**https://corp.example.com/identity`**), an `**endpoint**` starting with
-`**/oauth**` still targets `**https://corp.example.com/oauth/...**`, **not**
-under `**/identity`**. In that case set `**endpoint**` to the **full path from
-the host root** (e.g. `**/identity/oauth2/token`**) or use an **origin-only**
-`**base_url`** and put the prefix in `**endpoint**`.
+**Operator note:** Issuers like **Okta** use a **host-only** `**domain**` (e.g.
+`**dev-123.okta.com**`) and a `**token_path**` under the host root (e.g.
+`**/oauth2/default/v1/token**`). If the token path does not start at
+the host root, encode the **full path from the host root** in `**token_path**`
+(e.g. `**/identity/oauth2/v1/token**`).
 
 **Examples** (conceptual):
 
 
-| `**B`** (canonical)            | `**E**`                    | `**token_url**`                                   |
+| `**B**` (join base)            | `**E**`                    | `**token_url**`                                   |
 | ------------------------------ | -------------------------- | ------------------------------------------------- |
 | `https://tenant.okta.com`      | `/oauth2/default/v1/token` | `https://tenant.okta.com/oauth2/default/v1/token` |
-| `https://corp.example.com/api` | `/oauth2/v1/token`         | `https://corp.example.com/oauth2/v1/token`        |
+| `https://corp.example.com`     | `/identity/oauth2/v1/token` | `https://corp.example.com/identity/oauth2/v1/token` |
 
 
-**HTTPS:** `**token_url`** inherits `**http` vs `https**` from `**B**`; no
-upgrade/downgrade in join.
+**HTTPS:** Mode B uses **HTTPS** for `**B`**; there is no per-row **http** vs
+**https** toggle in v1 (`**domain`** has no scheme).
 
 ### Example (Phase 1)
 
 ```yaml
 # Optional; used when Mode B calls the token endpoint (ignored in Phase 1).
 oauth:
-  endpoint: /oauth2/default/v1/token
+  token_path: /oauth2/default/v1/token
   request_headers:
     - key: Accept
       value: application/json
 
-bases:
-  - base_url: https://dev-12345.okta.com
+domains:
+  - domain: dev-12345.okta.com
     tokens:
-      - token_id: management_read
-        token_value: ENC[AGE-REDACTED]
-      - token_id: automation
-        token_value: ENC[AGE-REDACTED]
-  - base_url: https://partner.example.com
+      SSWS:
+        - token_id: management_read
+          credential: ENC[AGE-REDACTED]
+        - token_id: automation
+          credential: ENC[AGE-REDACTED]
+  - domain: partner.example.com
     tokens:
-      - token_id: default
-        token_value: ENC[AGE-REDACTED]
+      Bearer:
+        - token_id: default
+          credential: ENC[AGE-REDACTED]
 ```
 
 Plain values (no sops) are allowed for local-only files; **secconfig** still
@@ -306,7 +289,7 @@ loads the YAML normally.
 
 **Full URL (illustrative):**
 
-`http://127.0.0.1:{TOKMINT_PORT}/v1/token?profile=...&base_url=...&token_id=...`
+`http://127.0.0.1:{TOKMINT_PORT}/v1/token?profile=...&domain=...&token_id=...`
 (Phase 1; omit or empty `**client_id`** / `**key_id**` as already specified.)
 
 **Why not `GET`?** Easier in some clients, but `**GET`** + query string is more
@@ -332,12 +315,12 @@ optional or conditional parameter has **no value set** when either:
 real requests. Any **non-empty** string after trim is a real value (including
 the literal text `null` if a provider ever issued that as an id).
 
-`**profile`** and `**base_url**` are **required**: each key **must** appear with
+`**profile`** and `**domain**` are **required**: each key **must** appear with
 a **non-empty** value after trim.
 
 **Implementation note:** optional/conditional: missing key → no value. If key
 is present, trim; if result is empty → no value; else use the string as the
-identifier. `**profile`** / `**base_url**`: required; `**400**` if missing or
+identifier. `**profile`** / `**domain**`: required; `**400**` if missing or
 empty after trim.
 
 The rest of this doc uses **unset** to mean **no value set** as above (omit or
@@ -347,7 +330,7 @@ empty after trim).
 | Parameter   | Required        | Notes                                                                                                                                                                                     |
 | ----------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `profile`   | yes (non-empty) | Maps to `{profile}.enc.yaml` under the secconfig subdirectory (query param has no suffix).                                                                                                     |
-| `base_url`  | yes (non-empty) | User-supplied base URL for the tenant/environment; combined with `**oauth.endpoint`** for Mode B.                                                                                         |
+| `domain`    | yes (non-empty) | ASCII hostname for the tenant/IdP (no scheme); combined with **`https://`** + canonical `**domain**` and `**oauth.token_path`** for Mode B token URL.                                       |
 | `client_id` | conditional     | **Mode B** when set and non-empty. **Mode A** when unset.                                                                                                                                 |
 | `token_id`  | conditional     | **Required** (non-empty) in Mode A. Unset in Mode B.                                                                                                                                      |
 | `key_id`    | optional        | Only in Mode B when `client_id` is set. If set and non-empty: **encrypted PEM** (keyring) for private-key JWT. If unset: **client_secret** for that `client_id` (sops-encrypted in YAML). |
@@ -362,9 +345,10 @@ or non-empty `key_id` when not in Mode B.
 ## Mode A — static API token
 
 - **When:** `client_id` unset; `token_id` non-empty.
-- **Config:** `**bases[]`** row matching request `**base_url**`; static value from
-the `**tokens**` list entry whose `**token_id**` matches the request (field
-`**token_value**`).
+- **Config:** `**domains[]`** row matching request `**domain**`; find the list
+  entry under some **`tokens`** scheme key whose **`token_id`** matches the
+  request; use that key as **`token_type`** and **`credential`** as
+  **`access_token`**.
 - **Behavior:** decrypt from config (via secconfig); **no** call to provider
 token endpoint for issuance.
 - **Response:** same JSON shape as Mode B (see below).
@@ -372,8 +356,8 @@ token endpoint for issuance.
 ## Mode B — OAuth (client credentials)
 
 - **When:** `client_id` set and non-empty (after unset normalization).
-- **Token URL:** **Token URL joining (Mode B)** — canonical request
-`**base_url`** + profile `**oauth.endpoint**` via `**urljoin**`.
+- **Token URL:** **Token URL joining (Mode B)** — `**https://` +** canonical
+request `**domain**` + profile `**oauth.token_path**` via `**urljoin**`.
 - **HTTP headers:** profile `**oauth.request_headers`** merged into the token
 request as above (Phase 2+); defaults for standard form posts TBD in
 implementation.
@@ -397,9 +381,14 @@ block; Okta flow **reuses** that.
 ```json
 {
   "access_token": "<string>",
-  "token_type": "Bearer"
+  "token_type": "<scheme>"
 }
 ```
+
+**Mode A:** **`token_type`** is the **`tokens`** **mapping key** (scheme) for
+the list that contained the matched **`token_id`**. Clients typically form
+**`Authorization`** as **`token_type`**, a single space, then
+**`access_token`**.
 
 - `**expires_in`:** include when the **OAuth provider** returns it (Mode B);
 **omit** for static tokens (Mode A). Postman can branch if needed.
@@ -412,11 +401,11 @@ v1**.
 
 - Every error response uses `**Content-Type: application/json`** and the **v1
 error body shape** below (same as success: JSON only).
-- Responses must **never** echo secrets: no `**token_value`**, **PEM**,
-`**client_secret`**, **assertion JWT**, raw **IdP** error payloads, or
-`**Authorization`** material in `**detail**` or any field.
+- Responses must **never** echo secrets: no raw **`credential`** value, **PEM**,
+  **`client_secret`**, **assertion JWT**, raw **IdP** error payloads, or
+  **`Authorization`** material in **`detail`** or any field.
 - `**detail**` is for humans (operators); `**code**` is for scripts and
-Postman tests. `**detail**` may name a parameter (e.g. “`base_url` is
+Postman tests. `**detail**` may name a parameter (e.g. “`domain` is
 invalid”) but must not repeat untrusted input at length (cap length in
 implementation).
 - **Log** status code + `**code`** + request correlation if any; avoid logging
@@ -441,15 +430,15 @@ with a doc update).
 
 ```json
 {
-  "code": "INVALID_BASE_URL",
-  "detail": "base_url failed canonicalization."
+  "code": "INVALID_DOMAIN",
+  "detail": "domain failed canonicalization."
 }
 ```
 
 ```json
 {
-  "code": "UNKNOWN_BASE",
-  "detail": "No bases entry matches this base_url for this profile."
+  "code": "UNKNOWN_DOMAIN",
+  "detail": "No domains entry matches this domain for this profile."
 }
 ```
 
@@ -458,10 +447,10 @@ with a doc update).
 
 | Status    | Meaning                                                                                                                                                         | Typical `code` values                                                            |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `**400**` | Client mistake: bad or inconsistent query, invalid URL shape, wrong mode mix, missing required param for chosen mode, invalid `**oauth.endpoint**`.             | See registry below.                                                              |
-| `**404**` | Known route but **unknown resource** in tokmint’s config space: no profile file, or no matching `**base_url`** row.                                             | `**UNKNOWN_PROFILE**`, `**UNKNOWN_BASE**`.                                       |
+| `**400**` | Client mistake: bad or inconsistent query, invalid URL shape, wrong mode mix, missing required param for chosen mode, invalid `**oauth.token_path**`.             | See registry below.                                                              |
+| `**404**` | Known route but **unknown resource** in tokmint’s config space: no profile file, or no matching `**domain`** row.                                              | `**UNKNOWN_PROFILE**`, `**UNKNOWN_DOMAIN**`.                                       |
 | `**405**` | Wrong HTTP method (only `**POST /v1/token**` is defined for minting in v1).                                                                                     | `**METHOD_NOT_ALLOWED**`.                                                        |
-| `**500**` | Server / operator misconfiguration: unreadable profile, invalid YAML shape, duplicate `**base_url**` / `**token_id**` in config, decrypt failure, internal bug. | `**PROFILE_LOAD_FAILED**`, `**PROFILE_CONFIG_INVALID**`, `**INTERNAL_ERROR**`, … |
+| `**500**` | Server / operator misconfiguration: unreadable profile, invalid YAML shape, duplicate `**domain**` / `**token_id**` in config, decrypt failure, internal bug.   | `**PROFILE_LOAD_FAILED**`, `**PROFILE_CONFIG_INVALID**`, `**INTERNAL_ERROR**`, … |
 | `**502**` | Mode B: token request reached the IdP transport but failed, or IdP returned an error **after** a successful HTTP round-trip.                                    | `**UPSTREAM_ERROR`**.                                                            |
 | `**503**` | Transient dependency unavailable (optional; e.g. secconfig keyring not ready). Use sparingly so operators can retry.                                            | `**SERVICE_UNAVAILABLE**`.                                                       |
 
@@ -478,21 +467,21 @@ update).
 | `code`                         | HTTP              | When                                                                                                                                                                                                                                         |
 | ------------------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `**METHOD_NOT_ALLOWED**`       | **405**           | Not `**POST`** on `**/v1/token**`.                                                                                                                                                                                                           |
-| `**MISSING_PARAMETER**`        | **400**           | Required query parameter missing or empty after trim (`**profile`**, `**base_url**`, or mode-specific required fields).                                                                                                                      |
+| `**MISSING_PARAMETER**`        | **400**           | Required query parameter missing or empty after trim (`**profile`**, `**domain**`, or mode-specific required fields).                                                                                                                       |
 | `**INVALID_PROFILE_NAME**`     | **400**           | `**profile`** or secconfig subdirectory fails safe-filename / segment rules.                                                                                                                                                                 |
-| `**INVALID_BASE_URL**`         | **400**           | `**base_url`** fails **Canonical `base_url` algorithm** (malformed, userinfo, query/fragment, scheme, path, `**..`**, etc.).                                                                                                                 |
+| `**INVALID_DOMAIN**`          | **400**           | `**domain`** fails **Canonical `domain` algorithm** (non-ASCII, empty labels, `**..**`, bad label chars, etc.).                                                                                                                             |
 | `**INVALID_MODE_COMBINATION**` | **400**           | After unset normalization: e.g. `**client_id`** and `**token_id**` both set; Mode A with unset `**token_id**`; `**key_id**` set when not in Mode B; Mode B with unset `**client_id**`; other impossible combinations.                        |
 | `**UNKNOWN_PROFILE**`          | **404**           | No profile file for `**{subdirectory}/{profile}.enc.yaml`** under `**SECCONFIG_DIR**`.                                                                                                                                                        |
-| `**UNKNOWN_BASE**`             | **404**           | Profile loaded, canonical `**base_url`** matches **no** `**bases[]`** row.                                                                                                                                                                   |
+| `**UNKNOWN_DOMAIN**`             | **404**           | Profile loaded, canonical `**domain`** matches **no** `**domains[]`** row.                                                                                                                                                                    |
 | `**UNKNOWN_TOKEN_ID**`         | **400**           | Mode A: row matches but no `**tokens`** item has this `**token_id**`.                                                                                                                                                                        |
-| `**OAUTH_CONFIG_MISSING**`     | **400**           | Mode B: `**oauth`** missing, `**oauth.endpoint**` missing, or `**oauth**` unusable for token URL.                                                                                                                                            |
-| `**INVALID_OAUTH_ENDPOINT**`   | **400**           | `**oauth.endpoint`** fails **Token URL joining (Mode B)** validation.                                                                                                                                                                        |
+| `**OAUTH_CONFIG_MISSING**`     | **400**           | Mode B: `**oauth`** missing, `**oauth.token_path**` missing, or `**oauth**` unusable for token URL.                                                                                                                                            |
+| `**INVALID_OAUTH_TOKEN_PATH**`   | **400**           | `**oauth.token_path`** fails **Token URL joining (Mode B)** validation.                                                                                                                                                                        |
 | `**UNKNOWN_CLIENT_ID`**        | **400**           | Mode B (Phase 2+): no `**clients`** entry for this `**client_id**` on the matched row.                                                                                                                                                       |
 | `**CLIENT_CONFIG_INVALID**`    | **400** / **500** | Mode B: `**client_id`** present but `**clients**` entry malformed (pick **400** if clearly request/config mismatch, **500** if file corrupt).                                                                                                |
 | `**KEY_ID_NOT_ALLOWED`**       | **400**           | `**key_id`** set when `**client_id**` is unset (Mode A), or other mutual-exclusion violations involving `**key_id**`.                                                                                                                        |
 | `**PROFILE_LOAD_FAILED**`      | **500**           | `**secconfig.load_config`** or I/O failed (missing `**SECCONFIG_DIR**`, permission, unreadable file — without leaking paths in `**detail**`).                                                                                                |
-| `**PROFILE_YAML_INVALID**`     | **500**           | YAML parse error or top-level shape not a mapping / missing `**bases`**.                                                                                                                                                                     |
-| `**PROFILE_CONFIG_INVALID**`   | **500**           | Valid YAML but invalid tokmint config: duplicate canonical `**base_url`**, duplicate `**token_id**` in one row, duplicate `**oauth.request_headers**` `**key**`, etc. Prefer failing at **process start** or **first load** of that profile. |
+| `**PROFILE_YAML_INVALID**`     | **500**           | YAML parse error or top-level shape not a mapping / missing **`domains`**.                                                                                                                                                                     |
+| `**PROFILE_CONFIG_INVALID**`   | **500**           | Valid YAML but invalid tokmint config: duplicate canonical **`domain`**, duplicate **`token_id`** in one row, duplicate **`oauth.request_headers`** **`key`**, etc. Prefer failing at **process start** or **first load** of that profile.     |
 | `**INTERNAL_ERROR`**           | **500**           | Unhandled exception; generic `**detail`** (“internal error”).                                                                                                                                                                                |
 | `**UPSTREAM_ERROR**`           | **502**           | Mode B: network failure talking to token URL, TLS error, or IdP HTTP **4xx/5xx** / non-JSON where JSON expected. `**detail`** stays generic; do **not** forward IdP body verbatim.                                                           |
 | `**SERVICE_UNAVAILABLE`**      | **503**           | Optional: decryption/keyring temporarily unavailable.                                                                                                                                                                                        |
@@ -509,14 +498,14 @@ opaque `**upstream_code`** field.
 
 | Situation                                                                  | HTTP    | `code`                                                     |
 | -------------------------------------------------------------------------- | ------- | ---------------------------------------------------------- |
-| Missing / empty `**profile**` or `**base_url**`                            | **400** | `**MISSING_PARAMETER`**                                    |
+| Missing / empty `**profile**` or `**domain**`                              | **400** | `**MISSING_PARAMETER`**                                    |
 | Invalid `**profile**` name                                                 | **400** | `**INVALID_PROFILE_NAME`**                                 |
-| Invalid `**base_url**`                                                     | **400** | `**INVALID_BASE_URL`**                                     |
+| Invalid `**domain**`                                                       | **400** | `**INVALID_DOMAIN`**                                       |
 | `**client_id**` or `**token_id**` or `**key_id**` inconsistent with Mode A | **400** | `**INVALID_MODE_COMBINATION`** or `**KEY_ID_NOT_ALLOWED**` |
 | `**token_id**` missing or empty                                            | **400** | `**MISSING_PARAMETER`** or `**INVALID_MODE_COMBINATION**`  |
 | Profile file not found                                                     | **404** | `**UNKNOWN_PROFILE`**                                      |
 | Load / parse / config shape failure                                        | **500** | `**PROFILE_*`** / `**INTERNAL_ERROR**`                     |
-| No `**bases[]**` match                                                     | **404** | `**UNKNOWN_BASE`**                                         |
+| No `**domains[]**` match                                                     | **404** | `**UNKNOWN_DOMAIN`**                                         |
 | No matching `**token_id**` in row                                          | **400** | `**UNKNOWN_TOKEN_ID`**                                     |
 
 
@@ -525,12 +514,12 @@ opaque `**upstream_code`** field.
 
 | Situation                                                                    | HTTP                        | `code`                                                  |
 | ---------------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------- |
-| Same shared validation failures as Mode A for `**profile**` / `**base_url**` | **400** / **404** / **500** | as above                                                |
+| Same shared validation failures as Mode A for `**profile**` / `**domain**`   | **400** / **404** / **500** | as above                                                |
 | `**client_id`** unset or Mode A-only combination                             | **400**                     | `**INVALID_MODE_COMBINATION`**                          |
 | `**token_id**` set (must be unset)                                           | **400**                     | `**INVALID_MODE_COMBINATION`**                          |
-| `**oauth**` / `**endpoint**` missing or unusable                             | **400**                     | `**OAUTH_CONFIG_MISSING`**                              |
-| `**oauth.endpoint**` invalid                                                 | **400**                     | `**INVALID_OAUTH_ENDPOINT`**                            |
-| Token URL join produces invalid URL                                          | **400**                     | `**INVALID_OAUTH_ENDPOINT`** or `**INVALID_BASE_URL**`  |
+| `**oauth**` / `**token_path**` missing or unusable                           | **400**                     | `**OAUTH_CONFIG_MISSING`**                              |
+| `**oauth.token_path**` invalid                                                 | **400**                     | `**INVALID_OAUTH_TOKEN_PATH`**                            |
+| Token URL join produces invalid URL                                          | **400**                     | `**INVALID_OAUTH_TOKEN_PATH`** or `**INVALID_DOMAIN**`    |
 | Unknown `**client_id**` on matched row                                       | **400**                     | `**UNKNOWN_CLIENT_ID`**                                 |
 | IdP transport or error response                                              | **502**                     | `**UPSTREAM_ERROR`**                                    |
 | PEM / JWT build / decrypt failures (Phase 3)                                 | **500**                     | `**INTERNAL_ERROR`** or a dedicated code when specified |
@@ -550,11 +539,11 @@ opaque `**upstream_code`** field.
 
 ### Profile load vs request validation
 
-- **Per-request** validation: query params, mode resolution, `**base_url`**
-canonical match, Mode A `**token_id**` lookup, Mode B `**oauth**` /
-`**endpoint**` / `**client_id**` (when implemented).
-- **Profile load** (on first use or at startup): YAML parse, `**bases`**
-structure, duplicates, `**oauth.request_headers**` `**key**` duplicates.
+- **Per-request** validation: query params, mode resolution, **`domain`**
+canonical match, Mode A **`token_id`** lookup, Mode B **`oauth`** /
+**`token_path`** / **`client_id`** (when implemented).
+- **Profile load** (on first use or at startup): YAML parse, **`domains`**
+structure, duplicates, **`oauth.request_headers`** **`key`** duplicates.
 Failures use `**500**` + `**PROFILE_***` so operators fix files, not
 Postman query strings.
 
@@ -562,9 +551,8 @@ Postman query strings.
 
 - Validate `**profile**` and the **secconfig subdirectory** name (safe single
 segment; no path escape from `{SECCONFIG_DIR}/{subdirectory}/`).
-- Validate `**base_url`** per **Canonical `base_url` algorithm**; operators
-should use **https** for real tenants (**http** allowed by the parser only
-where appropriate for local testing — tighten later if needed).
+- Validate `**domain`** per **Canonical `domain` algorithm**; Mode B assumes
+**HTTPS** when building the IdP token URL.
 - **Do not log** tokens, PEM, assertion JWTs, `Authorization` material, or
 `**oauth.request_headers`** values.
 - Reject `**key` / `value**` pairs that allow **header injection** (e.g.
@@ -583,16 +571,17 @@ adding OAuth complexity.
 
 1. **Phase 1 — Static tokens (Mode A only)**  
    - One HTTP route: **`POST /v1/token`** (see **HTTP contract (v1)**); query:
-     **`profile`**, **`base_url`**, **`token_id`** (non-empty); **`client_id`**
+     **`profile`**, **`domain`**, **`token_id`** (non-empty); **`client_id`**
      and **`key_id`** **unset** (omit or empty after trim).  
    - Load **`{SECCONFIG_DIR}/{subdirectory}/{profile}.enc.yaml`** via **secconfig**;
-     resolve the row matching **`base_url`** and the static token for
-     **`token_id`**; return **`access_token`** + **`token_type: Bearer`**.  
+     resolve the row matching **`domain`** and the static token for
+     **`token_id`**; return **`access_token`** + **`token_type`** (scheme key
+     under **`tokens`**).  
    - **No** token endpoint HTTP call; **no** keyring PEM path yet for this phase.  
-   - Smallest YAML slice: enough to match **`base_url`** and store **sops**
+   - Smallest YAML slice: enough to match **`domain`** and store **sops**
      encrypted static token values.  
    - **Profile YAML shape for Phase 1 is agreed** — see **Profile YAML schema**
-     (**`bases`** + **`tokens`** list; optional **`oauth`** allowed, ignored until
+     (**`domains`** + **`tokens`** list; optional **`oauth`** allowed, ignored until
      Mode B).
 
 2. **Phase 2 — OAuth with client secret**  
@@ -688,7 +677,7 @@ you add a unit file or orchestration.
 
 **Walkthrough:** One **plain YAML** profile under **`/tmp`** or **`tmp_path`** —
 no sops in CI if that pulls in keyring. Cover: **200** happy path, one **400**
-(e.g. bad mode), one **404** (**`UNKNOWN_BASE`** or **`UNKNOWN_PROFILE`**).
+(e.g. bad mode), one **404** (**`UNKNOWN_DOMAIN`** or **`UNKNOWN_PROFILE`**).
 Keeps regression safety for canonicalization and routing.
 
 **Decision:** **pytest** + **`httpx.AsyncClient`** or **`TestClient`**; implement
@@ -724,7 +713,7 @@ locally as you go.
   **`METHOD_NOT_ALLOWED`** for wrong method on that path.
 - [ ] Return **`404`** **`NOT_FOUND`** for unknown paths (align **`detail`**
   with **Errors and error handling**).
-- [ ] Parse query params **`profile`**, **`base_url`**, **`token_id`**,
+- [ ] Parse query params **`profile`**, **`domain`**, **`token_id`**,
   **`client_id`**, **`key_id`**; **unset** = omit or empty after ASCII trim.
 - [ ] Enforce Mode A only: **`client_id`** and **`key_id`** unset; **`token_id`**
   required and non-empty; reject mixed modes per registry
@@ -736,20 +725,20 @@ locally as you go.
   **`secconfig.load_config`** (relative path when **`SECCONFIG_DIR`** set).
 - [ ] Missing file → **`404`** **`UNKNOWN_PROFILE`**; decrypt/IO/other load
   failure → **`500`** **`PROFILE_LOAD_FAILED`** (no path leakage in **`detail`**).
-- [ ] Validate YAML: top-level **`bases`** non-empty list; duplicate canonical
-  **`base_url`** or duplicate **`token_id`** in one row → **`500`**
+- [ ] Validate YAML: top-level **`domains`** non-empty list; duplicate canonical
+  **`domain`** or duplicate **`token_id`** in one row → **`500`**
   **`PROFILE_CONFIG_INVALID`** (fail at first load of that profile or at
   startup — pick one and stay consistent).
 - [ ] Ignore optional top-level **`oauth`** for Phase 1.
 
 **Matching & response**
 
-- [ ] Implement **Canonical `base_url` algorithm** for request and each YAML
-  row; no match → **`404`** **`UNKNOWN_BASE`**.
+- [ ] Implement **Canonical `domain` algorithm** for request and each YAML
+  row; no match → **`404`** **`UNKNOWN_DOMAIN`**.
 - [ ] Find **`tokens`** list entry by **`token_id`**; no match → **`400`**
   **`UNKNOWN_TOKEN_ID`**.
-- [ ] Success: **`200`** JSON **`access_token`** (from **`token_value`**) +
-  **`token_type`:** **`Bearer`**.
+- [ ] Success: **`200`** JSON **`access_token`** (from **`credential`**) +
+  **`token_type`** (matching **`tokens`** scheme key).
 
 **Errors**
 
@@ -758,7 +747,7 @@ locally as you go.
 
 **Security & logging**
 
-- [ ] Do not log tokens, full **`token_value`**, or full query strings if
+- [ ] Do not log tokens, full **`credential`**, or full query strings if
   policy requires minimal logging.
 - [ ] Validate **`profile`** / subdirectory segment (no **`..`**, no **`/`**).
 
@@ -786,29 +775,30 @@ against the FastAPI app (no live port required). Use **plain YAML** (no sops) an
 - Build the app with the same env the tests set; avoid binding a real TCP port
   unless you add one **integration** test optionally marked.
 
-**Minimal valid profile** (adjust **`base_url`** / **`token_id`** per case):
+**Minimal valid profile** (adjust **`domain`** / **`token_id`** per case):
 
 ```yaml
-bases:
-  - base_url: https://tenant.example.com
+domains:
+  - domain: tenant.example.com
     tokens:
-      - token_id: default
-        token_value: plain-test-secret
+      Bearer:
+        - token_id: default
+          credential: plain-test-secret
 ```
 
 ### Test cases
 
 | ID | Case | Profile / setup | Request | Exp. HTTP | Exp. `code` |
 |----|------|-------------------|---------|-----------|-------------|
-| **P1-01** | Happy path | Minimal valid YAML; **`profile=test`**, file **`test.enc.yaml`** | **`POST /v1/token?profile=test&base_url=https://tenant.example.com&token_id=default`** (omit **`client_id`**, **`key_id`**) | **200** | *(success body; no `code`)* |
+| **P1-01** | Happy path | Minimal valid YAML; **`profile=test`**, file **`test.enc.yaml`** | **`POST /v1/token?profile=test&domain=tenant.example.com&token_id=default`** (omit **`client_id`**, **`key_id`**) | **200** | *(success body; no `code`)* |
 | **P1-02** | Success JSON shape | Same as P1-01 | Same | **200** | Body has **`access_token`** = YAML value, **`token_type`** **`Bearer`**. |
-| **P1-03** | Missing **`profile`** | Any | **`POST /v1/token?base_url=https://tenant.example.com&token_id=default`** | **400** | **`MISSING_PARAMETER`** |
-| **P1-04** | Missing **`base_url`** | Any | **`POST /v1/token?profile=test&token_id=default`** | **400** | **`MISSING_PARAMETER`** |
-| **P1-05** | Empty **`base_url`** after trim | Any | **`POST`** with **`base_url=`** empty or **`base_url=%20`** (space only) | **400** | **`MISSING_PARAMETER`** or **`INVALID_BASE_URL`** — pick one for whitespace-only and document. |
-| **P1-06** | Invalid **`base_url`** | Any | Query with malformed URL, userinfo, `?q=`, or `#frag` per **Canonical `base_url` algorithm** | **400** | **`INVALID_BASE_URL`** |
+| **P1-03** | Missing **`profile`** | Any | **`POST /v1/token?domain=tenant.example.com&token_id=default`** | **400** | **`MISSING_PARAMETER`** |
+| **P1-04** | Missing **`domain`** | Any | **`POST /v1/token?profile=test&token_id=default`** | **400** | **`MISSING_PARAMETER`** |
+| **P1-05** | Empty **`domain`** after trim | Any | **`POST`** with **`domain=`** empty or **`domain=%20`** (space only) | **400** | **`MISSING_PARAMETER`** (trims to empty). |
+| **P1-06** | Invalid **`domain`** | Any | Query with non-ASCII, `..`, or URL with `://` per **Canonical `domain` algorithm** | **400** | **`INVALID_DOMAIN`** |
 | **P1-07** | **`SECCONFIG_DIR`** unset | Clear env var for that test | Valid query | **503** | **`SERVICE_UNAVAILABLE`** |
-| **P1-08** | Unknown profile file | No **`tokmint/nope.enc.yaml`** | **`POST /v1/token?profile=nope&base_url=…&token_id=…`** | **404** | **`UNKNOWN_PROFILE`** |
-| **P1-09** | Unknown base | Minimal YAML with **`https://tenant.example.com`** only | **`base_url=https://other.example.com`** | **404** | **`UNKNOWN_BASE`** |
+| **P1-08** | Unknown profile file | No **`tokmint/nope.enc.yaml`** | **`POST /v1/token?profile=nope&domain=…&token_id=…`** | **404** | **`UNKNOWN_PROFILE`** |
+| **P1-09** | Unknown domain | Minimal YAML with **`tenant.example.com`** only | **`domain=other.example.com`** | **404** | **`UNKNOWN_DOMAIN`** |
 | **P1-10** | Unknown **`token_id`** | Minimal YAML | **`token_id=missing`** | **400** | **`UNKNOWN_TOKEN_ID`** |
 | **P1-11** | Mode B leak | Minimal YAML | **`client_id=any`** non-empty + valid Mode A other params | **400** | **`INVALID_MODE_COMBINATION`** |
 | **P1-12** | **`key_id`** set in Mode A | Minimal YAML | **`key_id=kid`** non-empty, **`client_id`** unset | **400** | **`KEY_ID_NOT_ALLOWED`** or **`INVALID_MODE_COMBINATION`** (match registry choice). |
@@ -816,10 +806,10 @@ bases:
 | **P1-14** | Wrong method | Any | **`GET /v1/token?…`** | **405** | **`METHOD_NOT_ALLOWED`** |
 | **P1-15** | Unknown path | Any | **`POST /v1/nope`** | **404** | **`NOT_FOUND`** |
 | **P1-16** | Error body shape | Any failing case | Any **4xx** above | — | JSON exactly **`{ "code", "detail" }`** (both strings). |
-| **P1-17** | Duplicate **`base_url`** in YAML | Two **`bases[]`** rows canonicalizing to same URL | Any request that loads profile | **500** | **`PROFILE_CONFIG_INVALID`** |
-| **P1-18** | Duplicate **`token_id`** in one row | Two **`tokens`** entries with same **`token_id`** | Any request that loads profile | **500** | **`PROFILE_CONFIG_INVALID`** |
-| **P1-19** | Missing top-level **`bases`** | YAML `{}` or **`bases: []`** | Valid query | **500** | **`PROFILE_YAML_INVALID`** or **`PROFILE_CONFIG_INVALID`** (pick one code; document in implementation). |
-| **P1-20** | Canonical equivalence | YAML **`https://TENANT.example.com/`**; request uses **`https://tenant.example.com`** | Match | **200** | Same as P1-01 (proves canonical match). |
+| **P1-17** | Duplicate **`domain`** in YAML | Two **`domains[]`** rows canonicalizing to same hostname | Any request that loads profile | **500** | **`PROFILE_CONFIG_INVALID`** |
+| **P1-18** | Duplicate **`token_id`** in one row | Two entries with same **`token_id`** under the same scheme list (or across schemes) | Any request that loads profile | **500** | **`PROFILE_CONFIG_INVALID`** |
+| **P1-19** | Missing top-level **`domains`** | YAML `{}` or **`domains: []`** | Valid query | **500** | **`PROFILE_YAML_INVALID`** or **`PROFILE_CONFIG_INVALID`** (pick one code; document in implementation). |
+| **P1-20** | Case-insensitive match | YAML **`TENANT.example.com`**; request uses **`tenant.example.com`** | Match | **200** | Same as P1-01 (proves canonical match). |
 
 **Optional later:** P1-21 **invalid `profile` name** (path segments / **`..`**) → **400**
 **`INVALID_PROFILE_NAME`**; P1-22 **load_config** raises (permission) → **500**
@@ -834,7 +824,7 @@ bases:
 
 ## Deferred / next iteration
 
-- **`clients`** shape under each **`bases[]`** entry (Phase 2+): see
+- **`clients`** shape under each **`domains[]`** entry (Phase 2+): see
   **`examples/profile.reference.yaml`** (list of **`client_id`** entries with
   optional **`client_secret`** and **`signing_keys`** for **`key_id`**).
 - **OAuth token request** details when using `client_secret` (form fields vs
@@ -852,25 +842,25 @@ response shape, config subdirectory under **SECCONFIG_DIR** (default
 - **Implementation phases:** static tokens first, then client_secret OAuth,
 then private-key JWT.
 - **No magic unset strings:** optional/conditional params are **unset** only if
-**omitted** or **empty after trim**; `**profile`** / `**base_url**` required
+**omitted** or **empty after trim**; `**profile`** / `**domain**` required
 and non-empty after trim.
 - **Tokmint runtime config:** listen **port** and **secconfig subdirectory**
 name (default **tokmint**) via **environment variables** at implementation.
-- **Profile YAML:** top-level `**bases`** with `**token_id` / `token_value**`
-tokens; optional `**oauth**` with `**endpoint**` and `**request_headers**`
-(Mode B); `**clients**` deferred to Phase 2.
-- **OAuth config nesting:** `**oauth.endpoint`** and `**oauth.request_headers**`
+- **Profile YAML:** top-level **`domains`** with **`tokens`** as **scheme →**
+  **[{ token_id, credential }, …]**; optional **`oauth`** with **`token_path`**
+  and **`request_headers`** (Mode B); **`clients**` deferred to Phase 2.
+- **OAuth config nesting:** `**oauth.token_path`** and `**oauth.request_headers**`
 replace flat `**oauth_***` top-level keys.
 - `**oauth.request_headers`:** each item is `**key`** (header name) and
 `**value**` (header value).
-- **Phase 1 profile YAML** structure agreed: `**bases`** with `**tokens**`
-(`token_id` / `token_value`); optional `**oauth**` (ignored in Phase 1).
+- **Phase 1 profile YAML** structure agreed: `**domains`** with **`tokens`**
+  mapping; optional `**oauth**` (ignored in Phase 1).
 - **HTTP contract (v1):** `**POST /v1/token`**, query string for parameters,
 no request body.
-- `**base_url` canonicalization:** single algorithm for request + YAML (scheme,
-host, default port, path/trailing slash, reject query/fragment/userinfo).
-- **Token URL (Mode B):** `**urljoin`**(canonical `**base_url**`, path-absolute
-`**oauth.endpoint**`) with documented path-root semantics.
+- `**domain` canonicalization:** single algorithm for request + YAML (ASCII
+LDH labels, lowercase, strip DNS root dot, reject `**..**`).
+- **Token URL (Mode B):** `**urljoin`**(`**https://` +** canonical `**domain**`,
+path-absolute `**oauth.token_path**`) with documented path-root semantics.
 - **Errors (v1):** JSON `**{ code, detail }`**; registry of `**code**` values;
 **400** / **404** / **405** / **500** / **502** / **503**; Mode A / Mode B /
 profile-load tables; no secret leakage.

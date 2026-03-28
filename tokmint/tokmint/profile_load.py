@@ -3,12 +3,13 @@ Load and validate profile YAML (Phase 1).
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 from secconfig.loader import SecretsConfigError, load_config, resolve_seconfig_dir
 
-from tokmint.canonical import CanonicalBaseUrlError, canonical_base_url
+from tokmint.canonical import CanonicalDomainError, canonical_domain
 from tokmint.errors import TokmintError
+from tokmint.validators import is_valid_auth_scheme
 
 
 def require_resolved_seconfig_dir() -> Path:
@@ -86,133 +87,164 @@ def load_profile(
 
 
 def _validate_profile_structure(data: dict[str, Any]) -> None:
-    """Validate bases, duplicates; Phase 1 ignores oauth."""
-    if "bases" not in data:
+    """Validate domains, duplicates; Phase 1 ignores oauth."""
+    if "domains" not in data:
         raise TokmintError(
             500,
             "PROFILE_YAML_INVALID",
-            "Profile YAML must contain a bases key.",
+            "Profile YAML must contain a domains key.",
         )
 
-    bases = data["bases"]
-    if not isinstance(bases, list) or len(bases) < 1:
+    domains = data["domains"]
+    if not isinstance(domains, list) or len(domains) < 1:
         raise TokmintError(
             500,
             "PROFILE_CONFIG_INVALID",
-            "bases must be a non-empty list.",
+            "domains must be a non-empty list.",
         )
 
-    seen_urls: set[str] = set()
-    for idx, row in enumerate(bases):
+    seen_domains: set[str] = set()
+    for idx, row in enumerate(domains):
         if not isinstance(row, dict):
             raise TokmintError(
                 500,
                 "PROFILE_CONFIG_INVALID",
-                "Each bases entry must be a mapping.",
+                "Each domains entry must be a mapping.",
             )
-        bu = row.get("base_url")
-        if not isinstance(bu, str) or not bu.strip():
+        dom = row.get("domain")
+        if not isinstance(dom, str) or not dom.strip():
             raise TokmintError(
                 500,
                 "PROFILE_CONFIG_INVALID",
-                "Each bases entry must have a non-empty base_url.",
+                "Each domains entry must have a non-empty domain.",
             )
         try:
-            c = canonical_base_url(bu)
-        except CanonicalBaseUrlError as exc:
+            c = canonical_domain(dom)
+        except CanonicalDomainError as exc:
             raise TokmintError(
                 500,
                 "PROFILE_CONFIG_INVALID",
-                "Invalid base_url in profile configuration.",
+                "Invalid domain in profile configuration.",
             ) from exc
-        if c in seen_urls:
+        if c in seen_domains:
             raise TokmintError(
                 500,
                 "PROFILE_CONFIG_INVALID",
-                "Duplicate base_url in profile configuration.",
+                "Duplicate domain in profile configuration.",
             )
-        seen_urls.add(c)
-        _validate_tokens_list(row.get("tokens"), idx)
+        seen_domains.add(c)
+        _validate_tokens(row.get("tokens"), idx)
 
 
-def _validate_tokens_list(tokens: Any, row_index: int) -> None:
+def _validate_tokens(tokens: Any, row_index: int) -> None:
+    """Validate tokens mapping: auth_scheme -> [ { token_id, credential }, ... ]."""
     if tokens is None:
         return
-    if not isinstance(tokens, list):
+    if not isinstance(tokens, dict):
         raise TokmintError(
             500,
             "PROFILE_CONFIG_INVALID",
-            "tokens must be a list when present.",
+            "tokens must be a mapping (auth_scheme to list) when present.",
         )
     seen_ids: set[str] = set()
-    for item in tokens:
-        if not isinstance(item, dict):
+    for scheme_key, bucket in tokens.items():
+        if not isinstance(scheme_key, str) or not scheme_key.strip():
             raise TokmintError(
                 500,
                 "PROFILE_CONFIG_INVALID",
-                "Each tokens entry must be a mapping.",
+                "Each tokens key must be a non-empty auth_scheme string.",
             )
-        tid = item.get("token_id")
-        if not isinstance(tid, str) or not tid.strip():
+        auth_scheme = scheme_key.strip()
+        if not is_valid_auth_scheme(auth_scheme):
             raise TokmintError(
                 500,
                 "PROFILE_CONFIG_INVALID",
-                "Each token entry must have a non-empty token_id.",
+                "Invalid auth_scheme as tokens key in profile configuration.",
             )
-        tid_norm = tid.strip()
-        if tid_norm in seen_ids:
+        if not isinstance(bucket, list) or len(bucket) < 1:
             raise TokmintError(
                 500,
                 "PROFILE_CONFIG_INVALID",
-                "Duplicate token_id under the same base_url.",
+                "Each auth_scheme under tokens must map to a non-empty list.",
             )
-        seen_ids.add(tid_norm)
-        tv = item.get("token_value")
-        if tv is None or (isinstance(tv, str) and not tv.strip()):
-            raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "Each token entry must have a token_value.",
-            )
+        for item in bucket:
+            if not isinstance(item, dict):
+                raise TokmintError(
+                    500,
+                    "PROFILE_CONFIG_INVALID",
+                    "Each tokens list entry must be a mapping.",
+                )
+            tid = item.get("token_id")
+            if not isinstance(tid, str) or not tid.strip():
+                raise TokmintError(
+                    500,
+                    "PROFILE_CONFIG_INVALID",
+                    "Each token entry must have a non-empty token_id.",
+                )
+            tid_norm = tid.strip()
+            if tid_norm in seen_ids:
+                raise TokmintError(
+                    500,
+                    "PROFILE_CONFIG_INVALID",
+                    "Duplicate token_id under the same domain.",
+                )
+            seen_ids.add(tid_norm)
+            cr = item.get("credential")
+            if cr is None or (isinstance(cr, str) and not cr.strip()):
+                raise TokmintError(
+                    500,
+                    "PROFILE_CONFIG_INVALID",
+                    "Each token entry must have a credential.",
+                )
 
 
-def find_token_value(
+def find_static_token(
     data: dict[str, Any],
-    request_canonical_base: str,
+    request_canonical_domain: str,
     token_id: str,
-) -> str:
-    """Return token_value for the matching row and token_id."""
-    bases = data["bases"]
+) -> Tuple[str, str]:
+    """
+    Return (auth_scheme, credential) for Mode A static token lookup.
+
+    auth_scheme is the YAML dict key under tokens (e.g. Bearer, SSWS).
+    """
+    domains = data["domains"]
     row: Optional[dict[str, Any]] = None
-    for entry in bases:
+    for entry in domains:
         assert isinstance(entry, dict)
-        bu = entry.get("base_url")
-        assert isinstance(bu, str)
-        if canonical_base_url(bu) == request_canonical_base:
+        dom = entry.get("domain")
+        assert isinstance(dom, str)
+        if canonical_domain(dom) == request_canonical_domain:
             row = entry
             break
     if row is None:
         raise TokmintError(
             404,
-            "UNKNOWN_BASE",
-            "No bases entry matches this base_url for this profile.",
+            "UNKNOWN_DOMAIN",
+            "No domains entry matches this domain for this profile.",
         )
 
     tokens = row.get("tokens")
-    if not isinstance(tokens, list):
+    if not isinstance(tokens, dict):
         raise TokmintError(
             400,
             "UNKNOWN_TOKEN_ID",
             "No static token is configured for this token_id.",
         )
 
-    for item in tokens:
-        if not isinstance(item, dict):
+    for auth_scheme_key, bucket in tokens.items():
+        if not isinstance(auth_scheme_key, str):
             continue
-        tid = item.get("token_id")
-        if isinstance(tid, str) and tid.strip() == token_id:
-            raw = item.get("token_value")
-            return str(raw)
+        if not isinstance(bucket, list):
+            continue
+        scheme = auth_scheme_key.strip()
+        for item in bucket:
+            if not isinstance(item, dict):
+                continue
+            tid = item.get("token_id")
+            if isinstance(tid, str) and tid.strip() == token_id:
+                raw_cred = item.get("credential")
+                return scheme, str(raw_cred)
     raise TokmintError(
         400,
         "UNKNOWN_TOKEN_ID",
