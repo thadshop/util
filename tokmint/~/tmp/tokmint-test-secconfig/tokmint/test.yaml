@@ -1,6 +1,7 @@
-bases:
-  - base_url: https://tenant.example.com
+domains:
+  - domain: tenant.example.com
     tokens:
-      - token_id: default
-        token_value: my-local-secret-token
+      Bearer:
+        - token_id: default
+          credential: my-local-secret-token
 

@@ -4,30 +4,30 @@
   "title": "tokmint profile",
   "description": "YAML profile for tokmint (Mode A static tokens, Mode B OAuth). Runtime may ignore keys not listed here (forward compatibility); this schema is strict for authoring and CI.",
   "type": "object",
-  "required": ["bases"],
+  "required": ["domains"],
   "additionalProperties": false,
   "properties": {
     "oauth": {
       "$ref": "#/$defs/oauth"
     },
-    "bases": {
+    "domains": {
       "type": "array",
       "minItems": 1,
       "items": {
-        "$ref": "#/$defs/baseRow"
+        "$ref": "#/$defs/domainRow"
       }
     }
   },
   "$defs": {
     "oauth": {
       "type": "object",
-      "required": ["endpoint"],
+      "required": ["token_path"],
       "additionalProperties": false,
       "properties": {
-        "endpoint": {
+        "token_path": {
           "type": "string",
           "minLength": 1,
-          "description": "Path-absolute token endpoint (e.g. /oauth2/default/v1/token).",
+          "description": "Path-absolute; joined with https:// + domain to form the OAuth token URL (e.g. /oauth2/default/v1/token).",
           "pattern": "^/"
         },
         "request_headers": {
@@ -52,20 +52,28 @@
         }
       }
     },
-    "baseRow": {
+    "domainRow": {
       "type": "object",
-      "required": ["base_url"],
+      "required": ["domain"],
       "additionalProperties": false,
       "properties": {
-        "base_url": {
+        "domain": {
           "type": "string",
           "minLength": 1,
-          "description": "Matched to request base_url after canonicalization in app code."
+          "description": "ASCII hostname (no scheme); matched case-insensitively after canonical_domain in app code."
         },
         "tokens": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/staticToken"
+          "type": "object",
+          "description": "Maps Authorization scheme (e.g. SSWS, Bearer) to a non-empty list of { token_id, credential }. token_id must be unique within the domain row across all schemes.",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*$"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/credentialEntry"
+            }
           }
         },
         "clients": {
@@ -76,21 +84,21 @@
         }
       }
     },
-    "staticToken": {
+    "credentialEntry": {
       "type": "object",
-      "required": ["token_id", "token_value"],
+      "required": ["token_id", "credential"],
       "additionalProperties": false,
       "properties": {
         "token_id": {
           "type": "string",
           "minLength": 1,
-          "description": "Single path segment style id (alphanumeric, _, -).",
+          "description": "Single path segment style id (alphanumeric, _, -); unique per domain row across all schemes.",
           "pattern": "^[a-zA-Z0-9_-]+$"
         },
-        "token_value": {
+        "credential": {
           "type": "string",
           "minLength": 1,
-          "description": "Secret; may be sops-encrypted in file."
+          "description": "Secret credential; maps to JSON access_token. May be sops-encrypted in file."
         }
       }
     },

@@ -1,23 +1,20 @@
 // Collection: tokmint_base (tokmint service root).
-// Environment: tokmint_profile, base_url, token_id,
-// optional tokmint_auth_scheme (default SSWS).
+// Environment: tokmint_profile, tokmint_domain, token_id.
 
 (function () {
     const base = pm.collectionVariables.get('tokmint_base')
         || 'http://127.0.0.1:9876';
 
     const profile = pm.environment.get('tokmint_profile');
-    const bu = pm.environment.get('base_url');
+    const dom = pm.environment.get('tokmint_domain');
     const tid = pm.environment.get('token_id');
-    const scheme = (pm.environment.get('tokmint_auth_scheme') || 'SSWS')
-        .trim();
 
     const missing = [];
     if (!profile) {
         missing.push('tokmint_profile');
     }
-    if (!bu) {
-        missing.push('base_url');
+    if (!dom) {
+        missing.push('tokmint_domain');
     }
     if (!tid) {
         missing.push('token_id');
@@ -30,7 +27,7 @@
 
     const q = [
         'profile=' + encodeURIComponent(profile),
-        'base_url=' + encodeURIComponent(bu),
+        'domain=' + encodeURIComponent(dom),
         'token_id=' + encodeURIComponent(tid),
     ].join('&');
 
@@ -62,6 +59,10 @@
             var secret = body.access_token;
             if (!secret || typeof secret !== 'string') {
                 throw new Error('tokmint: missing access_token');
+            }
+            var scheme = body.token_type;
+            if (!scheme || typeof scheme !== 'string') {
+                throw new Error('tokmint: missing token_type');
             }
 
             pm.request.headers.upsert({

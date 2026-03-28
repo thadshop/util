@@ -9,10 +9,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from tokmint.canonical import CanonicalBaseUrlError, canonical_base_url
+from tokmint.canonical import CanonicalDomainError, canonical_domain
 from tokmint.errors import TokmintError, error_json_response
 from tokmint.profile_load import (
-    find_token_value,
+    find_static_token,
     load_profile,
     require_resolved_seconfig_dir,
 )
@@ -86,7 +86,7 @@ async def starlette_http_handler(
 @app.post("/v1/token")
 async def mint_token(
     profile: Optional[str] = Query(None),
-    base_url: Optional[str] = Query(None),
+    domain: Optional[str] = Query(None),
     token_id: Optional[str] = Query(None),
     client_id: Optional[str] = Query(None),
     key_id: Optional[str] = Query(None),
@@ -118,21 +118,21 @@ async def mint_token(
             "TOKMINT_SECCONFIG_SUBDIR is invalid.",
         )
 
-    bu_raw = _query_value(base_url)
-    if bu_raw is None:
+    dom_raw = _query_value(domain)
+    if dom_raw is None:
         raise TokmintError(
             400,
             "MISSING_PARAMETER",
-            "Query parameter base_url is required.",
+            "Query parameter domain is required.",
         )
 
     try:
-        canon_req = canonical_base_url(bu_raw)
-    except CanonicalBaseUrlError:
+        canon_req = canonical_domain(dom_raw)
+    except CanonicalDomainError:
         raise TokmintError(
             400,
-            "INVALID_BASE_URL",
-            "base_url failed canonicalization.",
+            "INVALID_DOMAIN",
+            "domain failed canonicalization.",
         ) from None
 
     if not _query_unset(client_id):
@@ -158,8 +158,8 @@ async def mint_token(
         )
 
     pdata = load_profile(prof, subdir)
-    secret = find_token_value(pdata, canon_req, tid)
+    auth_scheme, secret = find_static_token(pdata, canon_req, tid)
     return {
         "access_token": secret,
-        "token_type": "Bearer",
+        "token_type": auth_scheme,
     }

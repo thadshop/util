@@ -6,22 +6,24 @@
 #
 # Request mapping (query params are NOT flat YAML keys at top level):
 #   profile   -> picks: {TOKMINT_SECCONFIG_SUBDIR}/{profile}.enc.yaml
-#   base_url  -> must match one bases[].base_url (after canonicalization)
-# Mode A: client_id and key_id unset; token_id selects a tokens[] entry on the
-#         row that matched base_url.
+#   domain    -> must match one domains[].domain (ASCII hostname; case-insensitive)
+# Mode A: client_id and key_id unset; token_id selects an entry under tokens.
+#   tokens: map Authorization scheme (SSWS, Bearer, …) -> list of
+#           { token_id, credential }. token_id unique per domain row (all keys).
 # Mode B: client_id set; token_id unset. key_id unset -> client_secret for that
 #         client. key_id set -> signing_keys[] entry with that key_id (PEM via
 #         keyring encrypt.sh ciphertext).
 #
-# Implementation note: Phase 1 only uses bases + tokens; oauth and clients are
+# Implementation note: Phase 1 only uses domains + tokens; oauth and clients are
 # ignored until Mode B / JWT phases land.
 
 # -----------------------------------------------------------------------------
 # OAuth / token endpoint (Mode B). Optional for Mode A-only profiles.
-# token URL = urljoin(canonical(base_url), oauth.endpoint)
+# token URL = urljoin('https://' + canonical(domain), oauth.token_path)
+# (HTTPS assumed for IdP host; tokmint does not store a scheme on domain.)
 # -----------------------------------------------------------------------------
 oauth:
-  endpoint: /oauth2/default/v1/token
+  token_path: /oauth2/default/v1/token
   request_headers:
     - key: Accept
       value: application/json
@@ -30,21 +32,23 @@ oauth:
       value: application/x-www-form-urlencoded
 
 # -----------------------------------------------------------------------------
-# One row per tenant / origin (canonical base_url identity).
-# Same profile file may list static tokens AND OAuth clients for the same base;
-# the active mode is chosen per request (A vs B), not by the file alone.
+# One row per tenant (canonical domain identity).
+# Same profile file may list static tokens AND OAuth clients for the same
+# issuer host (same `domain` row).
+# The active mode is chosen per request (A vs B), not by the file alone.
 # -----------------------------------------------------------------------------
-bases:
-  - base_url: https://dev-12345.okta.com
+domains:
+  - domain: dev-12345.okta.com
 
-    # --- Mode A: static API tokens (SSWS, vendor API keys, etc.) ------------
+    # --- Mode A: static API tokens — scheme -> [{ token_id, credential }, …]
     tokens:
-      - token_id: default
-        token_value: replace-or-sops-encrypt
-      - token_id: automation
-        token_value: replace-or-sops-encrypt
+      SSWS:
+        - token_id: default
+          credential: replace-or-sops-encrypt
+        - token_id: automation
+          credential: replace-or-sops-encrypt
 
-    # --- Mode B: OAuth clients for this base_url ----------------------------
+    # --- Mode B: OAuth clients for this domain ----------------------------
     clients:
       # Client credentials with shared secret (Phase 2 intent)
       - client_id: 0oa_example_client_secret
@@ -63,8 +67,9 @@ bases:
           - key_id: rotation
             encrypted_pem_path: tokmint/keys/okta-rotation.pem.enc
 
-  - base_url: https://partner.example.com
+  - domain: partner.example.com
     tokens:
-      - token_id: default
-        token_value: replace-or-sops-encrypt
+      Bearer:
+        - token_id: default
+          credential: replace-or-sops-encrypt
     # clients: []  # optional; omit entire key if unused

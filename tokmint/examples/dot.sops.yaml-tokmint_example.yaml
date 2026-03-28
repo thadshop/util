@@ -12,7 +12,7 @@
 #   - edit-encrypted-config.sh  temp plaintext under tokmint/
 # Ciphertext on disk for tokmint:  tokmint/<profile>.enc.yaml
 #
-# Only key NAMES token_value and client_secret are encrypted (any depth).
+# Only key NAMES credential and client_secret are encrypted (any depth).
 # Add more alternates inside encrypted_regex if you introduce other secret
 # leaf keys (e.g. a dedicated suffix pattern). Do NOT use a bare  value  key:
 # it would match every  value:  in the file (e.g. oauth headers).
@@ -20,5 +20,5 @@
 creation_rules:
   - path_regex: >-
       .*/tokmint/(\.edit-staging-plain\..*\.ya?ml|.*\.plain\.ya?ml)$
-    encrypted_regex: ^(token_value|client_secret)$
+    encrypted_regex: ^(credential|client_secret)$
     age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY

@@ -9,11 +9,12 @@ from starlette.testclient import TestClient
 
 from tokmint.app import app
 
-MINIMAL_YAML = """bases:
-  - base_url: https://tenant.example.com
+MINIMAL_YAML = """domains:
+  - domain: tenant.example.com
     tokens:
-      - token_id: default
-        token_value: plain-test-secret
+      Bearer:
+        - token_id: default
+          credential: plain-test-secret
 """
 
 
@@ -42,7 +43,7 @@ def test_p1_01_02_happy_path_and_json_shape(
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
         },
     )
@@ -60,7 +61,7 @@ def test_p1_03_missing_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Non
     r = client.post(
         "/v1/token",
         params={
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
         },
     )
@@ -68,7 +69,7 @@ def test_p1_03_missing_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert r.json()["code"] == "MISSING_PARAMETER"
 
 
-def test_p1_04_missing_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_04_missing_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -81,7 +82,7 @@ def test_p1_04_missing_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> No
     assert r.json()["code"] == "MISSING_PARAMETER"
 
 
-def test_p1_05_empty_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_05_empty_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -90,7 +91,7 @@ def test_p1_05_empty_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "",
+            "domain": "",
             "token_id": "default",
         },
     )
@@ -98,7 +99,7 @@ def test_p1_05_empty_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None
     assert r.json()["code"] == "MISSING_PARAMETER"
 
 
-def test_p1_06_invalid_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_06_invalid_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -107,12 +108,12 @@ def test_p1_06_invalid_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> No
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://user@host/",
+            "domain": "https://tenant.example.com",
             "token_id": "default",
         },
     )
     assert r.status_code == 400
-    assert r.json()["code"] == "INVALID_BASE_URL"
+    assert r.json()["code"] == "INVALID_DOMAIN"
 
 
 def test_p1_07_secconfig_unset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,7 +123,7 @@ def test_p1_07_secconfig_unset(monkeypatch: pytest.MonkeyPatch) -> None:
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
         },
     )
@@ -142,7 +143,7 @@ def test_p1_07b_secconfig_dir_path_missing(
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
         },
     )
@@ -159,7 +160,7 @@ def test_p1_08_unknown_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Non
         "/v1/token",
         params={
             "profile": "nope",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
         },
     )
@@ -167,7 +168,7 @@ def test_p1_08_unknown_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert r.json()["code"] == "UNKNOWN_PROFILE"
 
 
-def test_p1_09_unknown_base(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_09_unknown_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -176,12 +177,12 @@ def test_p1_09_unknown_base(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://other.example.com",
+            "domain": "other.example.com",
             "token_id": "default",
         },
     )
     assert r.status_code == 404
-    assert r.json()["code"] == "UNKNOWN_BASE"
+    assert r.json()["code"] == "UNKNOWN_DOMAIN"
 
 
 def test_p1_10_unknown_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -193,7 +194,7 @@ def test_p1_10_unknown_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> No
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "missing",
         },
     )
@@ -210,7 +211,7 @@ def test_p1_11_client_id_set(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
             "client_id": "x",
         },
@@ -228,7 +229,7 @@ def test_p1_12_key_id_set(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
             "key_id": "kid",
         },
@@ -246,7 +247,7 @@ def test_p1_13_token_id_unset(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
         },
     )
     assert r.status_code == 400
@@ -262,7 +263,7 @@ def test_p1_14_wrong_method(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
         },
     )
@@ -294,18 +295,20 @@ def test_p1_16_error_body_shape(tmp_path, monkeypatch: pytest.MonkeyPatch) -> No
     assert isinstance(body["detail"], str)
 
 
-def test_p1_17_duplicate_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_17_duplicate_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
-    bad = """bases:
-  - base_url: https://x.example.com
+    bad = """domains:
+  - domain: x.example.com
     tokens:
-      - token_id: a
-        token_value: "1"
-  - base_url: https://X.example.com/
+      Bearer:
+        - token_id: a
+          credential: "1"
+  - domain: X.example.com
     tokens:
-      - token_id: b
-        token_value: "2"
+      Bearer:
+        - token_id: b
+          credential: "2"
 """
     _write_profile(str(sec), "test", bad)
     client = _client(monkeypatch, str(sec))
@@ -313,7 +316,7 @@ def test_p1_17_duplicate_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> 
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://x.example.com",
+            "domain": "x.example.com",
             "token_id": "a",
         },
     )
@@ -324,13 +327,14 @@ def test_p1_17_duplicate_base_url(tmp_path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_p1_18_duplicate_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
-    bad = """bases:
-  - base_url: https://tenant.example.com
+    bad = """domains:
+  - domain: tenant.example.com
     tokens:
-      - token_id: dup
-        token_value: "1"
-      - token_id: dup
-        token_value: "2"
+      Bearer:
+        - token_id: dup
+          credential: "1"
+        - token_id: dup
+          credential: "2"
 """
     _write_profile(str(sec), "test", bad)
     client = _client(monkeypatch, str(sec))
@@ -338,7 +342,7 @@ def test_p1_18_duplicate_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> 
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "dup",
         },
     )
@@ -346,7 +350,37 @@ def test_p1_18_duplicate_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> 
     assert r.json()["code"] == "PROFILE_CONFIG_INVALID"
 
 
-def test_p1_19_missing_bases(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_duplicate_token_id_across_auth_schemes(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sec = tmp_path / "sec"
+    sec.mkdir()
+    bad = """domains:
+  - domain: tenant.example.com
+    tokens:
+      SSWS:
+        - token_id: same
+          credential: "1"
+      Bearer:
+        - token_id: same
+          credential: "2"
+"""
+    _write_profile(str(sec), "test", bad)
+    client = _client(monkeypatch, str(sec))
+    r = client.post(
+        "/v1/token",
+        params={
+            "profile": "test",
+            "domain": "tenant.example.com",
+            "token_id": "same",
+        },
+    )
+    assert r.status_code == 500
+    assert r.json()["code"] == "PROFILE_CONFIG_INVALID"
+
+
+def test_p1_19_missing_domains(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", "{}")
@@ -355,7 +389,7 @@ def test_p1_19_missing_bases(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
         },
     )
@@ -363,14 +397,18 @@ def test_p1_19_missing_bases(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert r.json()["code"] == "PROFILE_YAML_INVALID"
 
 
-def test_p1_20_canonical_equivalence(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_20_case_insensitive_match(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
-    y = """bases:
-  - base_url: https://TENANT.example.com/
+    y = """domains:
+  - domain: TENANT.example.com
     tokens:
-      - token_id: default
-        token_value: secret
+      Bearer:
+        - token_id: default
+          credential: secret
 """
     _write_profile(str(sec), "test", y)
     client = _client(monkeypatch, str(sec))
@@ -378,9 +416,40 @@ def test_p1_20_canonical_equivalence(tmp_path, monkeypatch: pytest.MonkeyPatch) 
         "/v1/token",
         params={
             "profile": "test",
-            "base_url": "https://tenant.example.com",
+            "domain": "tenant.example.com",
             "token_id": "default",
         },
     )
     assert r.status_code == 200
-    assert r.json()["access_token"] == "secret"
+    body = r.json()
+    assert body["access_token"] == "secret"
+    assert body["token_type"] == "Bearer"
+
+
+def test_mode_a_auth_scheme_ssws_in_profile(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    y = """domains:
+  - domain: tenant.example.com
+    tokens:
+      SSWS:
+        - token_id: default
+          credential: ssws-test-secret
+"""
+    sec = tmp_path / "sec"
+    sec.mkdir()
+    _write_profile(str(sec), "test", y)
+    client = _client(monkeypatch, str(sec))
+    r = client.post(
+        "/v1/token",
+        params={
+            "profile": "test",
+            "domain": "tenant.example.com",
+            "token_id": "default",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["access_token"] == "ssws-test-secret"
+    assert body["token_type"] == "SSWS"
