@@ -3,6 +3,10 @@
 # ---------------------------------------------------------------------------
 # sops uses the FIRST creation_rules entry whose path_regex matches the path
 # of the file you pass to  sops -e  (the plaintext INPUT), not --output.
+# That path is relative to the DIRECTORY of .sops.yaml (sops strips that
+# prefix).  E.g. with .sops.yaml in .../seccconfig/, a staging file becomes
+#   tokmint/.edit-staging-plain.XXXXXX.yaml   — not  .../tokmint/...
+# Use (^|.*/)tokmint/... so both shapes match if you move .sops.yaml later.
 # Put this block BEFORE any broad catch-all (e.g. .*\.yaml$) in your file.
 #
 # Public age key: e.g.  path/to/util/keyring/get-age-public-key.sh
@@ -19,6 +23,6 @@
 
 creation_rules:
   - path_regex: >-
-      .*/tokmint/(\.edit-staging-plain\..*\.ya?ml|.*\.plain\.ya?ml)$
+      (^|.*/)tokmint/(\.edit-staging-plain\..*\.ya?ml|.*\.plain\.ya?ml)$
     encrypted_regex: ^(credential|client_secret)$
     age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY

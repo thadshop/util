@@ -1,3 +1,26 @@
+// This is a copy of postman-prerequest.example.js, adapted to enable
+// usage of Postman collections provided by SailPoint.
+// SailPoint collections need only be modified slightly to work with tokmint.
+//
+// WARNING:
+//   SailPoint's pre-request scripting exposes the access token in an environment
+//   variable named `accessToken`.  As this script is meant to enable usage of
+//   SailPoint's Postman collection, this script will do that too, if tokmint
+//   is not used.
+//
+// ********************
+// What needs to be modified in SailPoint's collection:
+// - Add a collection variable named `tokmint-base_url`.  It's value should
+//   be the URL to the tokmint service, http://localhost:9876 by default.
+// - Set the collection's Auth Type to "No Auth"
+// - Add a collection variable named `tokmint-sailpoint-full_domain`.  Its value will
+//   be set by this script.
+// - SailPoint's collection variable named `baseUrL` should be set to
+//   "https://{{tokmint-sailpoint-full_domain}}/<API version path>".  For example,
+//   if the API version is 2025, then `baseUrl` should be set to
+//   "https://{{tokmint-sailpoint-full_domain}}/v2025".
+// ********************
+
 // Structure of this file:
 //   • If tokmint-use_prerequest_script is the string "true" → only the
 //     tokmint block below runs, then the script stops.
@@ -35,7 +58,7 @@
         // tokmint-domain.
         // Add pairs: [ 'environment_variable_name', 'collection_variable_name' ].
         const _tokmint_env_to_collection = [
-            // ['tokmint-domain', 'api_hostname'],
+            ['tokmint-domain', 'tokmint-sailpoint-full_domain'],
         ];
 
         for (let i = 0; i < _tokmint_env_to_collection.length; i++) {
@@ -263,7 +286,69 @@
     // `tokmint-use_prerequest_script` does not exist
     // or is not the string "true".
     // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-    console.info('not using tokmint pre-request script');
+    console.info('using SailPoint pre-request script, adapted for tokmint');
+
+    // Below is the scripting provided by SailPoint.  Beware that it exposes
+    // the access token in an environment variable.  Use this at your own risk.
+
+    const domain = pm.environment.get('domain') ? pm.environment.get('domain') : pm.collectionVariables.get('domain')
+    const tokenUrl = 'https://' + pm.environment.get('tenant') + '.api.' + domain + '.com/oauth/token';
+    const clientId = pm.environment.get('clientId');
+    const clientSecret = pm.environment.get('clientSecret');
+
+    const getTokenRequest = {
+        method: 'POST',
+        url: tokenUrl,
+        body: {
+            mode: 'formdata',
+            formdata: [{
+                    key: 'grant_type',
+                    value: 'client_credentials'
+                },
+                {
+                    key: 'client_id',
+                    value: clientId
+                },
+                {
+                    key: 'client_secret',
+                    value: clientSecret
+                }
+            ]
+        }
+    };
+
+
+    var moment = require('moment');
+    if (!pm.environment.has('tokenExpTime')) {
+        pm.environment.set('tokenExpTime', moment());
+    }
+
+    if (moment(pm.environment.get('tokenExpTime')) <= moment() || !pm.environment.get('tokenExpTime') || !pm.environment.get('accessToken')) {
+        var time = moment();
+        time.add(12, 'hours');
+        pm.environment.set('tokenExpTime', time);
+        pm.sendRequest(getTokenRequest, (err, response) => {
+            const jsonResponse = response.json();
+            if (response.code != 200) {
+                throw new Error(`Unable to authenticate: ${JSON.stringify(jsonResponse)}`);
+            }
+            const newAccessToken = jsonResponse.access_token;
+            pm.environment.set('accessToken', newAccessToken);
+        });
+    }
+
+    // Below is not part of the scripting provided by SailPoint.
+    // It is to enable SailPoint's scripting to work with:
+    // - The full domain name required by tokmint.
+    // - The Postman Auth Type "No Auth" required by tokmint.
+    //   (SailPoint's scripting is meant for Auth Type "Bearer Token",
+    //   and this avoids having to switch the Auth Type in Postman.)
+    console.warn("by SailPoint's design, the access token was exposed as environment variable `accessToken`")
+    pm.collectionVariables.set('tokmint-sailpoint-full_domain', pm.environment.get('tenant') + '.api.' + domain + '.com');
+    pm.request.headers.upsert({
+        key: 'Authorization',
+        value: 'Bearer ' + pm.environment.get('accessToken'),
+    });
 
     // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     // Paste above any scripting you want to run if the environment variable

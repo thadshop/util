@@ -9,11 +9,5 @@
   "ruff.lineLength": 80,
   "[python]": {
     "editor.rulers": [80]
-  },
-  "shellcheck.enable": true,
-  "shellcheck.executablePath": "${env:HOME}/.local/bin/shellcheck",
-  "shellcheck.run": "onSave",
-  "files.associations": {
-    "*.sh": "shellscript"
   }
 }
