@@ -1,7 +1,0 @@
-domains:
-  - domain: tenant.example.com
-    tokens:
-      Bearer:
-        - token_id: default
-          credential: my-local-secret-token
-

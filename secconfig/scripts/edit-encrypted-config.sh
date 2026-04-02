@@ -222,7 +222,7 @@ _run_new() {
     _require_prereqs
     _resolve_sops_config
 
-    _plain_file="$(mktemp '/dev/shm/edit-new-plain.XXXXXX')"
+    _plain_file="$(mktemp '/dev/shm/edit-new-plain.XXXXXX.yaml')"
     : > "${_plain_file}"
     chmod 600 "${_plain_file}"
 

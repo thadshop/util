@@ -35,6 +35,18 @@
           "items": {
             "$ref": "#/$defs/headerPair"
           }
+        },
+        "client_authentication": {
+          "type": "string",
+          "enum": ["body", "basic"],
+          "description": "How client_id and client_secret are sent to the token endpoint (default: body)."
+        },
+        "token_form_extra": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra application/x-www-form-urlencoded fields for the token POST (provider-specific)."
         }
       }
     },
@@ -119,7 +131,7 @@
         "scopes": {
           "type": "string",
           "minLength": 1,
-          "description": "Reserved for fixed token-request scopes (Mode B)."
+          "description": "Optional space-separated scopes for client_credentials grant."
         },
         "signing_keys": {
           "type": "array",
@@ -128,7 +140,11 @@
             "$ref": "#/$defs/signingKey"
           }
         }
-      }
+      },
+      "anyOf": [
+        { "required": ["client_secret"] },
+        { "required": ["signing_keys"] }
+      ]
     },
     "signingKey": {
       "type": "object",

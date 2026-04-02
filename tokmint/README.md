@@ -1,6 +1,7 @@
 # tokmint
 
-Local HTTP service that returns **static API tokens** from YAML profiles (Phase 1).
+Local HTTP service that returns **API tokens** from YAML profiles: **Mode A**
+static tokens or **Mode B** OAuth 2.0 **client_credentials** (client secret).
 See **`DESIGN.md`** for the full contract. **`examples/profile.reference.yaml`**
 is a commented layout for Mode A, Mode B, and intended OAuth/JWT fields.
 
@@ -53,11 +54,29 @@ Equivalent:
 .venv/bin/uvicorn tokmint.app:app --host 127.0.0.1 --port 9876
 ```
 
-## Example request
+## Example requests
+
+**Mode A** (static token; query param **`token_id`**; do not set **`client_id`**):
 
 ```bash
 curl -s -X POST 'http://127.0.0.1:9876/v1/token?profile=test&domain=tenant.example.com&token_id=default'
 ```
+
+**Mode B** (OAuth client credentials; set **`client_id`**; omit **`token_id`**).
+Profile must define top-level **`oauth.token_path`** and a matching **`clients`**
+row with **`client_secret`** for that **`client_id`** under the request
+**`domain`**. Tokmint **`POST`s to** `https://{domain}{oauth.token_path}` with
+TLS verification enabled.
+
+```bash
+curl -s -X POST \
+  'http://127.0.0.1:9876/v1/token?profile=myprofile&domain=idp.example.com&client_id=my-client-id'
+```
+
+Optional profile fields: **`oauth.client_authentication`** (`body` or `basic`),
+**`oauth.token_form_extra`** (extra form fields), per-client **`scopes`**.
+**`key_id`** (private_key_jwt) returns **`400`** **`NOT_IMPLEMENTED`** until a
+later release.
 
 ## SOPS-encrypted profile (manual test)
 

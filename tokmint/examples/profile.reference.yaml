@@ -27,7 +27,6 @@ oauth:
   request_headers:
     - key: Accept
       value: application/json
-    # value may be sops-encrypted if it carries a secret
     - key: Content-Type
       value: application/x-www-form-urlencoded
 
