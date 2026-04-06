@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Example: mint a static token using curl
 # Usage: ./mint-token-curl.example.static_token.sh
 # Environment variables:

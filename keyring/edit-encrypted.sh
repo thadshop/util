@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Interactive workflow: cleartext only in /dev/shm; encrypt with encrypt.sh
 # (OpenSSL + KEK). For sops/secconfig, use secconfig/scripts/edit-encrypted-config.sh.
 # Use: edit-encrypted.sh [options] new | edit ENCRYPTED_FILE
 #
-# Shared prompts: edit-encrypted-common.sh
+# Shared prompts: edit-encrypted-common.bash
 
 set -e
 
 _script_path="$(realpath "${BASH_SOURCE[0]}")"
 _script_dir="$(dirname "${_script_path}")"
-# shellcheck source=lib.sh
-source "${_script_dir}/lib.sh"
+# shellcheck source=lib.bash
+source "${_script_dir}/lib.bash"
 
-if ! secrets_no_debug; then
+if ! keyring_no_debug; then
     printf '%s\n' "edit-encrypted: refused (xtrace or verbose enabled)" >&2
     exit 1
 fi
 
 export EEC_MSG_PREFIX="edit-encrypted"
-# shellcheck source=edit-encrypted-common.sh
-source "${_script_dir}/edit-encrypted-common.sh"
+# shellcheck source=edit-encrypted-common.bash
+source "${_script_dir}/edit-encrypted-common.bash"
 
 _encrypt_sh="${_script_dir}/encrypt.sh"
 _decrypt_sh="${_script_dir}/decrypt.sh"

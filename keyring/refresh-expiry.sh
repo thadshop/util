@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Reset the persistent keyring expiry timer so the KEK does not
 # expire. No-op on WSL2 (uses @u, no expiry to reset).
 # Add to crontab to run periodically (e.g. daily).

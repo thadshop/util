@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Example: mint a bearer token using client_id and client_secret using curl
 # Usage: ./mint-token-curl.example.client_id_secret.sh
 # Environment variables:

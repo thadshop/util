@@ -10,32 +10,10 @@
 # Mode A: client_id and key_id unset; token_id selects an entry under tokens.
 #   tokens: map Authorization scheme (SSWS, Bearer, …) -> list of
 #           { token_id, credential }. token_id unique per domain row (all keys).
-# Mode B: client_id set; token_id unset. key_id unset -> client_secret for that
-#         client. key_id set -> signing_keys[] entry with that key_id (PEM via
-#         keyring encrypt.sh ciphertext).
+# Mode B: client_id set; token_id unset. Use auth_servers under the domain row.
 #
-# Implementation note: Phase 1 only uses domains + tokens; oauth and clients are
-# ignored until Mode B / JWT phases land.
+# -----------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# OAuth / token endpoint (Mode B). Optional for Mode A-only profiles.
-# token URL = urljoin('https://' + canonical(domain), oauth.token_path)
-# (HTTPS assumed for IdP host; tokmint does not store a scheme on domain.)
-# -----------------------------------------------------------------------------
-oauth:
-  token_path: /oauth2/default/v1/token
-  request_headers:
-    - key: Accept
-      value: application/json
-    - key: Content-Type
-      value: application/x-www-form-urlencoded
-
-# -----------------------------------------------------------------------------
-# One row per tenant (canonical domain identity).
-# Same profile file may list static tokens AND OAuth clients for the same
-# issuer host (same `domain` row).
-# The active mode is chosen per request (A vs B), not by the file alone.
-# -----------------------------------------------------------------------------
 domains:
   - domain: dev-12345.okta.com
 
@@ -47,28 +25,43 @@ domains:
         - token_id: automation
           credential: replace-or-sops-encrypt
 
-    # --- Mode B: OAuth clients for this domain ----------------------------
-    clients:
-      # Client credentials with shared secret (Phase 2 intent)
-      - client_id: 0oa_example_client_secret
-        client_secret: replace-or-sops-encrypt
-        # Optional: fixed scopes for token POST (when implementation supports)
-        # scopes: okta.apps.read okta.users.read
+    # --- Mode B: OAuth clients grouped by authorization server ----------------
+    auth_servers:
+      - path: /oauth2/default/v1/token
+        request_headers:
+          - key: Accept
+            value: application/json
+          - key: Content-Type
+            value: application/x-www-form-urlencoded
 
-      # Private-key JWT (Phase 3 intent): query key_id selects signing_keys row
-      - client_id: 0oa_example_private_jwt
-        # client_secret omitted when using only signing_keys + key_id query
-        signing_keys:
-          - key_id: primary
-            # Path to ciphertext from keyring/encrypt.sh (relative to
-            # SECCONFIG_DIR recommended; absolute paths allowed if documented)
-            encrypted_pem_path: tokmint/keys/okta-primary.pem.enc
-          - key_id: rotation
-            encrypted_pem_path: tokmint/keys/okta-rotation.pem.enc
+        clients:
+          - client_id: 0oa_example_client_secret
+            client_authn_method: client_secret_post
+            client_secret: replace-or-sops-encrypt
+            # scopes: okta.apps.read okta.users.read
+
+          - client_id: 0oa_example_private_jwt
+            client_authn_method: private_key_jwt
+            private_key_jwt:
+              assertion_iss: https://dev-12345.okta.com/oauth2/default
+              # assertion_sub: optional; defaults to client_id
+              # assertion_aud: optional; defaults to token URL for the request
+              assertion_ttl_seconds: 300
+            signing_keys:
+              - key_id: primary
+                encrypted_pem_path: tokmint/keys/okta-primary.pem.enc
+                jwt_header:
+                  kid: replace-with-okta-jwks-kid
+              - key_id: rotation
+                encrypted_pem_path: tokmint/keys/okta-rotation.pem.enc
+                jwt_header:
+                  kid: replace-with-rotation-kid
+            # dpop:
+            #   enabled: true
+            #   signing_keys: [primary, rotation]
 
   - domain: partner.example.com
     tokens:
       Bearer:
         - token_id: default
           credential: replace-or-sops-encrypt
-    # clients: []  # optional; omit entire key if unused

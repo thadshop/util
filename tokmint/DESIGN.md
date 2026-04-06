@@ -55,7 +55,7 @@ here later.
 | **Secconfig subdirectory** | Single name under **`SECCONFIG_DIR`** for profile YAML (**`TOKMINT_SECCONFIG_SUBDIR`**, default **`tokmint`**). No `/` or `..`; validate like **`profile`**. |
 
 
-**Path:** `{SECCONFIG_DIR}/{TOKMINT_SECCONFIG_SUBDIR}/{profile}.enc.yaml`  
+**Path:** `{SECCONFIG_DIR}/{TOKMINT_SECCONFIG_SUBDIR}/{profile}.enc.yaml`
 (`SECCONFIG_DIR` continues to come from the existing secconfig convention.)
 
 Optional later: a small **tokmint config file** (e.g. under `XDG_CONFIG_HOME`)
@@ -65,7 +65,7 @@ if env-only becomes awkward — **out of scope** until needed.
 
 - Under `**SECCONFIG_DIR`**, a subdirectory whose **name is configurable**
 (default `**tokmint/`**; see **Tokmint service configuration**).
-- **Profile** selects the file: `**{subdirectory}/{profile}.enc.yaml`**  
+- **Profile** selects the file: `**{subdirectory}/{profile}.enc.yaml`**
 Examples: `profile=okta` → `okta.enc.yaml`, `sailpoint`, `azure`, etc.
 
 ## Profile YAML schema
@@ -450,7 +450,7 @@ with a doc update).
 | `**400**` | Client mistake: bad or inconsistent query, invalid URL shape, wrong mode mix, missing required param for chosen mode, invalid `**oauth.token_path**`.             | See registry below.                                                              |
 | `**404**` | Known route but **unknown resource** in tokmint’s config space: no profile file, or no matching `**domain`** row.                                              | `**UNKNOWN_PROFILE**`, `**UNKNOWN_DOMAIN**`.                                       |
 | `**405**` | Wrong HTTP method (only `**POST /v1/token**` is defined for minting in v1).                                                                                     | `**METHOD_NOT_ALLOWED**`.                                                        |
-| `**500**` | Server / operator misconfiguration: unreadable profile, invalid YAML shape, duplicate `**domain**` / `**token_id**` in config, decrypt failure, internal bug.   | `**PROFILE_LOAD_FAILED**`, `**PROFILE_CONFIG_INVALID**`, `**INTERNAL_ERROR**`, … |
+| `**500**` | Server / operator misconfiguration: profile file unreadable, decrypt failure, internal bug. **Invalid profile content** (shape, duplicates, auth server paths) returns **400** `**PROFILE_INVALID**`.                          | `**PROFILE_LOAD_FAILED**`, `**INTERNAL_ERROR**`, … |
 | `**502**` | Mode B: token request reached the IdP transport but failed, or IdP returned an error **after** a successful HTTP round-trip.                                    | `**UPSTREAM_ERROR`**.                                                            |
 | `**503**` | Transient dependency unavailable (optional; e.g. secconfig keyring not ready). Use sparingly so operators can retry.                                            | `**SERVICE_UNAVAILABLE**`.                                                       |
 
@@ -468,20 +468,18 @@ update).
 | ------------------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `**METHOD_NOT_ALLOWED**`       | **405**           | Not `**POST`** on `**/v1/token**`.                                                                                                                                                                                                           |
 | `**MISSING_PARAMETER**`        | **400**           | Required query parameter missing or empty after trim (`**profile`**, `**domain**`, or mode-specific required fields).                                                                                                                       |
-| `**INVALID_PROFILE_NAME**`     | **400**           | `**profile`** or secconfig subdirectory fails safe-filename / segment rules.                                                                                                                                                                 |
+| `**UNSUPPORTED_PROFILE_NAME**` | **400**           | The **`profile`** query value is not a single safe path segment: only **`[a-zA-Z0-9_-]+`** is allowed so it can be used as part of a filename under **`SECCONFIG_DIR`** without **`..`**, slashes, or spaces. Not about missing file (**`UNKNOWN_PROFILE`**) or invalid YAML (**`PROFILE_INVALID`**). |
 | `**INVALID_DOMAIN**`          | **400**           | `**domain`** fails **Canonical `domain` algorithm** (non-ASCII, empty labels, `**..**`, bad label chars, etc.).                                                                                                                             |
 | `**INVALID_MODE_COMBINATION**` | **400**           | After unset normalization: e.g. `**client_id`** and `**token_id**` both set; Mode A with unset `**token_id**`; `**key_id**` set when not in Mode B; Mode B with unset `**client_id**`; other impossible combinations.                        |
-| `**UNKNOWN_PROFILE**`          | **404**           | No profile file for `**{subdirectory}/{profile}.enc.yaml`** under `**SECCONFIG_DIR**`.                                                                                                                                                        |
+| `**UNKNOWN_PROFILE**`          | **404**           | No profile **file** for `**{subdirectory}/{profile}.enc.yaml`** under `**SECCONFIG_DIR**` — profile name does not exist on disk. Contrast **`PROFILE_INVALID`** (file exists but structure/content is wrong).                                  |
 | `**UNKNOWN_DOMAIN**`             | **404**           | Profile loaded, canonical `**domain`** matches **no** `**domains[]`** row.                                                                                                                                                                    |
 | `**UNKNOWN_TOKEN_ID**`         | **400**           | Mode A: row matches but no `**tokens`** item has this `**token_id**`.                                                                                                                                                                        |
 | `**OAUTH_CONFIG_MISSING**`     | **400**           | Mode B: `**oauth`** missing, `**oauth.token_path**` missing, or `**oauth**` unusable for token URL.                                                                                                                                            |
 | `**INVALID_OAUTH_TOKEN_PATH**`   | **400**           | `**oauth.token_path`** fails **Token URL joining (Mode B)** validation.                                                                                                                                                                        |
 | `**UNKNOWN_CLIENT_ID`**        | **400**           | Mode B (Phase 2+): no `**clients`** entry for this `**client_id**` on the matched row.                                                                                                                                                       |
-| `**CLIENT_CONFIG_INVALID**`    | **400** / **500** | Mode B: `**client_id`** present but `**clients**` entry malformed (pick **400** if clearly request/config mismatch, **500** if file corrupt).                                                                                                |
+| `**PROFILE_INVALID**`          | **400**           | Profile **file was found and decrypted/loaded**, but content fails tokmint validation: bad `**domains**` shape, duplicate `**domain**` / `**token_id**`, bad `**auth_servers**`, bad client/signing-key blocks, bad JWK/PEM, etc. Contrast **`UNKNOWN_PROFILE`** (no file). |
 | `**KEY_ID_NOT_ALLOWED`**       | **400**           | `**key_id`** set when `**client_id**` is unset (Mode A), or other mutual-exclusion violations involving `**key_id**`.                                                                                                                        |
-| `**PROFILE_LOAD_FAILED**`      | **500**           | `**secconfig.load_config`** or I/O failed (missing `**SECCONFIG_DIR**`, permission, unreadable file — without leaking paths in `**detail**`).                                                                                                |
-| `**PROFILE_YAML_INVALID**`     | **500**           | YAML parse error or top-level shape not a mapping / missing **`domains`**.                                                                                                                                                                     |
-| `**PROFILE_CONFIG_INVALID**`   | **500**           | Valid YAML but invalid tokmint config: duplicate canonical **`domain`**, duplicate **`token_id`** in one row, duplicate **`oauth.request_headers`** **`key`**, etc. Prefer failing at **process start** or **first load** of that profile.     |
+| `**PROFILE_LOAD_FAILED**`      | **500**           | `**secconfig.load_config`** failed after the file was found: I/O, permission, **SOPS decrypt** (wrong/missing key), or corrupt ciphertext. Usually **operator** fix. `**detail`** stays generic (no path leakage). |
 | `**INTERNAL_ERROR`**           | **500**           | Unhandled exception; generic `**detail`** (“internal error”).                                                                                                                                                                                |
 | `**UPSTREAM_ERROR**`           | **502**           | Mode B: network failure talking to token URL, TLS error, or IdP HTTP **4xx/5xx** / non-JSON where JSON expected. `**detail`** stays generic; do **not** forward IdP body verbatim.                                                           |
 | `**SERVICE_UNAVAILABLE`**      | **503**           | Optional: decryption/keyring temporarily unavailable.                                                                                                                                                                                        |
@@ -499,7 +497,7 @@ opaque `**upstream_code`** field.
 | Situation                                                                  | HTTP    | `code`                                                     |
 | -------------------------------------------------------------------------- | ------- | ---------------------------------------------------------- |
 | Missing / empty `**profile**` or `**domain**`                              | **400** | `**MISSING_PARAMETER`**                                    |
-| Invalid `**profile**` name                                                 | **400** | `**INVALID_PROFILE_NAME`**                                 |
+| `**profile**` query not a safe segment                                    | **400** | `**UNSUPPORTED_PROFILE_NAME`**                              |
 | Invalid `**domain**`                                                       | **400** | `**INVALID_DOMAIN`**                                       |
 | `**client_id**` or `**token_id**` or `**key_id**` inconsistent with Mode A | **400** | `**INVALID_MODE_COMBINATION`** or `**KEY_ID_NOT_ALLOWED**` |
 | `**token_id**` missing or empty                                            | **400** | `**MISSING_PARAMETER`** or `**INVALID_MODE_COMBINATION**`  |
@@ -569,33 +567,33 @@ resolution + client auth + token request shape.
 Deliver incrementally so Postman integration stays simple end-to-end before
 adding OAuth complexity.
 
-1. **Phase 1 — Static tokens (Mode A only)**  
+1. **Phase 1 — Static tokens (Mode A only)**
    - One HTTP route: **`POST /v1/token`** (see **HTTP contract (v1)**); query:
      **`profile`**, **`domain`**, **`token_id`** (non-empty); **`client_id`**
-     and **`key_id`** **unset** (omit or empty after trim).  
+     and **`key_id`** **unset** (omit or empty after trim).
    - Load **`{SECCONFIG_DIR}/{subdirectory}/{profile}.enc.yaml`** via **secconfig**;
      resolve the row matching **`domain`** and the static token for
      **`token_id`**; return **`access_token`** + **`token_type`** (scheme key
-     under **`tokens`**).  
-   - **No** token endpoint HTTP call; **no** keyring PEM path yet for this phase.  
+     under **`tokens`**).
+   - **No** token endpoint HTTP call; **no** keyring PEM path yet for this phase.
    - Smallest YAML slice: enough to match **`domain`** and store **sops**
-     encrypted static token values.  
+     encrypted static token values.
    - **Profile YAML shape for Phase 1 is agreed** — see **Profile YAML schema**
      (**`domains`** + **`tokens`** list; optional **`oauth`** allowed, ignored until
      Mode B).
 
-2. **Phase 2 — OAuth with client secret**  
+2. **Phase 2 — OAuth with client secret**
    - Add **Mode B** with **`client_id`** and **no** **`key_id`**: **`client_secret`**
      in YAML (sops); POST to **token URL** (**Token URL joining (Mode B)**);
      apply **`oauth.request_headers`** from the profile; return provider response
-     shape (still **`access_token`** + **`token_type`**, optional **`expires_in`**).  
+     shape (still **`access_token`** + **`token_type`**, optional **`expires_in`**).
    - Query param rules and mutual exclusion with **`token_id`** as already
      described.
 
-3. **Phase 3 — OAuth with public/private key**  
+3. **Phase 3 — OAuth with public/private key**
    - Add optional **`key_id`**; YAML points to **encrypt.sh** ciphertext on disk;
      **decrypt.sh** at runtime; JWT client assertion + token exchange (Okta
-     first).  
+     first).
    - **General JWT signing** module as a building block for this phase.
 
 Later phases do not change the **success JSON** shape agreed for v1.
@@ -726,9 +724,8 @@ locally as you go.
 - [ ] Missing file → **`404`** **`UNKNOWN_PROFILE`**; decrypt/IO/other load
   failure → **`500`** **`PROFILE_LOAD_FAILED`** (no path leakage in **`detail`**).
 - [ ] Validate YAML: top-level **`domains`** non-empty list; duplicate canonical
-  **`domain`** or duplicate **`token_id`** in one row → **`500`**
-  **`PROFILE_CONFIG_INVALID`** (fail at first load of that profile or at
-  startup — pick one and stay consistent).
+  **`domain`** or duplicate **`token_id`** in one row → **`400`**
+  **`PROFILE_INVALID`** (fail at first load of that profile).
 - [ ] Ignore optional top-level **`oauth`** for Phase 1.
 
 **Matching & response**
@@ -806,13 +803,13 @@ domains:
 | **P1-14** | Wrong method | Any | **`GET /v1/token?…`** | **405** | **`METHOD_NOT_ALLOWED`** |
 | **P1-15** | Unknown path | Any | **`POST /v1/nope`** | **404** | **`NOT_FOUND`** |
 | **P1-16** | Error body shape | Any failing case | Any **4xx** above | — | JSON exactly **`{ "code", "detail" }`** (both strings). |
-| **P1-17** | Duplicate **`domain`** in YAML | Two **`domains[]`** rows canonicalizing to same hostname | Any request that loads profile | **500** | **`PROFILE_CONFIG_INVALID`** |
-| **P1-18** | Duplicate **`token_id`** in one row | Two entries with same **`token_id`** under the same scheme list (or across schemes) | Any request that loads profile | **500** | **`PROFILE_CONFIG_INVALID`** |
-| **P1-19** | Missing top-level **`domains`** | YAML `{}` or **`domains: []`** | Valid query | **500** | **`PROFILE_YAML_INVALID`** or **`PROFILE_CONFIG_INVALID`** (pick one code; document in implementation). |
+| **P1-17** | Duplicate **`domain`** in YAML | Two **`domains[]`** rows canonicalizing to same hostname | Any request that loads profile | **400** | **`PROFILE_INVALID`** |
+| **P1-18** | Duplicate **`token_id`** in one row | Two entries with same **`token_id`** under the same scheme list (or across schemes) | Any request that loads profile | **400** | **`PROFILE_INVALID`** |
+| **P1-19** | Missing top-level **`domains`** | YAML `{}` or **`domains: []`** | Valid query | **400** | **`PROFILE_INVALID`** |
 | **P1-20** | Case-insensitive match | YAML **`TENANT.example.com`**; request uses **`tenant.example.com`** | Match | **200** | Same as P1-01 (proves canonical match). |
 
 **Optional later:** P1-21 **invalid `profile` name** (path segments / **`..`**) → **400**
-**`INVALID_PROFILE_NAME`**; P1-22 **load_config** raises (permission) → **500**
+**`UNSUPPORTED_PROFILE_NAME`**; P1-22 **load_config** raises (permission/decrypt) → **500**
 **`PROFILE_LOAD_FAILED`**.
 
 ### Checklist linkage

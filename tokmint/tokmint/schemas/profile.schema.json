@@ -2,14 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tokmint.local/schemas/profile.schema.json",
   "title": "tokmint profile",
-  "description": "YAML profile for tokmint (Mode A static tokens, Mode B OAuth). Runtime may ignore keys not listed here (forward compatibility); this schema is strict for authoring and CI.",
+  "description": "YAML profile for tokmint (Mode A static tokens, Mode B OAuth).",
   "type": "object",
   "required": ["domains"],
   "additionalProperties": false,
   "properties": {
-    "oauth": {
-      "$ref": "#/$defs/oauth"
-    },
     "domains": {
       "type": "array",
       "minItems": 1,
@@ -19,37 +16,6 @@
     }
   },
   "$defs": {
-    "oauth": {
-      "type": "object",
-      "required": ["token_path"],
-      "additionalProperties": false,
-      "properties": {
-        "token_path": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Path-absolute; joined with https:// + domain to form the OAuth token URL (e.g. /oauth2/default/v1/token).",
-          "pattern": "^/"
-        },
-        "request_headers": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/headerPair"
-          }
-        },
-        "client_authentication": {
-          "type": "string",
-          "enum": ["body", "basic"],
-          "description": "How client_id and client_secret are sent to the token endpoint (default: body)."
-        },
-        "token_form_extra": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Extra application/x-www-form-urlencoded fields for the token POST (provider-specific)."
-        }
-      }
-    },
     "headerPair": {
       "type": "object",
       "required": ["key", "value"],
@@ -72,11 +38,10 @@
         "domain": {
           "type": "string",
           "minLength": 1,
-          "description": "ASCII hostname (no scheme); matched case-insensitively after canonical_domain in app code."
+          "description": "ASCII hostname (no scheme)."
         },
         "tokens": {
           "type": "object",
-          "description": "Maps Authorization scheme (e.g. SSWS, Bearer) to a non-empty list of { token_id, credential }. token_id must be unique within the domain row across all schemes.",
           "propertyNames": {
             "pattern": "^[A-Za-z][A-Za-z0-9+.-]*$"
           },
@@ -88,10 +53,10 @@
             }
           }
         },
-        "clients": {
+        "auth_servers": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/oauthClient"
+            "$ref": "#/$defs/authServer"
           }
         }
       }
@@ -104,34 +69,94 @@
         "token_id": {
           "type": "string",
           "minLength": 1,
-          "description": "Single path segment style id (alphanumeric, _, -); unique per domain row across all schemes.",
           "pattern": "^[a-zA-Z0-9_-]+$"
         },
         "credential": {
           "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "authServer": {
+      "type": "object",
+      "required": ["path", "clients"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
           "minLength": 1,
-          "description": "Secret credential; maps to JSON access_token. May be sops-encrypted in file."
+          "description": "Path-absolute token endpoint path.",
+          "pattern": "^/"
+        },
+        "request_headers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/headerPair"
+          }
+        },
+        "form_extra": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "clients": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/oauthClient"
+          }
         }
       }
     },
     "oauthClient": {
       "type": "object",
-      "required": ["client_id"],
+      "required": ["client_id", "client_authn_method"],
       "additionalProperties": false,
       "properties": {
         "client_id": {
           "type": "string",
           "minLength": 1
         },
+        "client_authn_method": {
+          "type": "string",
+          "enum": [
+            "client_secret_post",
+            "client_secret_basic",
+            "private_key_jwt"
+          ]
+        },
         "client_secret": {
           "type": "string",
-          "minLength": 1,
-          "description": "For shared-secret OAuth; omit when using signing_keys only."
+          "minLength": 1
         },
         "scopes": {
           "type": "string",
-          "minLength": 1,
-          "description": "Optional space-separated scopes for client_credentials grant."
+          "minLength": 1
+        },
+        "private_key_jwt": {
+          "type": "object",
+          "required": ["assertion_iss"],
+          "additionalProperties": false,
+          "properties": {
+            "assertion_iss": {
+              "type": "string",
+              "minLength": 1
+            },
+            "assertion_sub": {
+              "type": "string",
+              "minLength": 1
+            },
+            "assertion_aud": {
+              "type": "string",
+              "minLength": 1
+            },
+            "assertion_ttl_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600
+            }
+          }
         },
         "signing_keys": {
           "type": "array",
@@ -139,30 +164,114 @@
           "items": {
             "$ref": "#/$defs/signingKey"
           }
+        },
+        "dpop": {
+          "type": "object",
+          "required": ["enabled"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "signing_keys": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Allowlist of key_id values allowed for DPoP."
+            }
+          }
         }
       },
-      "anyOf": [
-        { "required": ["client_secret"] },
-        { "required": ["signing_keys"] }
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "client_authn_method": {
+                "const": "private_key_jwt"
+              }
+            },
+            "required": ["client_authn_method"]
+          },
+          "then": {
+            "required": ["signing_keys", "private_key_jwt"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "client_authn_method": {
+                "enum": [
+                  "client_secret_post",
+                  "client_secret_basic"
+                ]
+              }
+            },
+            "required": ["client_authn_method"]
+          },
+          "then": {
+            "required": ["client_secret"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "dpop": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": ["enabled"]
+              }
+            },
+            "required": ["dpop"]
+          },
+          "then": {
+            "required": ["signing_keys"]
+          }
+        }
       ]
     },
     "signingKey": {
       "type": "object",
-      "required": ["key_id", "encrypted_pem_path"],
+      "required": ["key_id"],
       "additionalProperties": false,
       "properties": {
         "key_id": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^[a-zA-Z0-9_-]+$",
-          "description": "Matches query parameter key_id."
+          "pattern": "^[a-zA-Z0-9_-]+$"
         },
         "encrypted_pem_path": {
           "type": "string",
-          "minLength": 1,
-          "description": "Path to OpenSSL ciphertext (e.g. under SECCONFIG_DIR)."
+          "minLength": 1
+        },
+        "jwk": {
+          "type": "object",
+          "minProperties": 1
+        },
+        "jwt_header": {
+          "type": "object",
+          "additionalProperties": true
         }
-      }
+      },
+      "oneOf": [
+        {
+          "required": ["key_id", "encrypted_pem_path"],
+          "not": {
+            "required": ["jwk"]
+          }
+        },
+        {
+          "required": ["key_id", "jwk"],
+          "not": {
+            "required": ["encrypted_pem_path"]
+          }
+        }
+      ]
     }
   }
 }

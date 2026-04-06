@@ -1,7 +1,8 @@
-#!/usr/bin/env bash
+# SOURCE ONLY — do not execute. Sourced by edit-encrypted.sh and
+# edit-encrypted-config.sh. Caller sets EEC_MSG_PREFIX before source.
+#
 # Shared interactive helpers for edit-encrypted.sh (OpenSSL) and
-# edit-encrypted-config.sh (sops). Source from those scripts; do not run alone.
-# Caller should set EEC_MSG_PREFIX (e.g. edit-encrypted-config) before source.
+# edit-encrypted-config.sh (sops).
 
 # shellcheck shell=bash
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Run a command with the age DEK from get-dek.sh exported as SOPS_AGE_KEY_FILE.
 # Cleartext DEK file lives under /dev/shm and is removed on exit.
 # Callers (e.g. secconfig/scripts/decrypt-config.sh) keep path validation local

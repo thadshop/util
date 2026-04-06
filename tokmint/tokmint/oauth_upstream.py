@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 import httpx
 
 from tokmint.errors import TokmintError
+from tokmint.oauth_client_assertion import client_assertion_form_fields
 
 
 def _header_map_from_profile(
@@ -48,24 +49,26 @@ def _form_encode(data: Mapping[str, str]) -> str:
 async def fetch_client_credentials_token(
     token_url: str,
     client_id: str,
-    client_secret: str,
+    client_secret: Optional[str],
     scopes: Optional[str],
     profile_headers: Any,
-    client_authentication: str,
+    client_authn: str,
     token_form_extra: Optional[Mapping[str, str]],
+    client_assertion_jwt: Optional[str] = None,
+    dpop_proof_jwt: Optional[str] = None,
     http_client: Optional[httpx.AsyncClient] = None,
 ) -> Dict[str, Union[str, int]]:
     """
     POST client_credentials to token_url. Return access_token, token_type,
     and expires_in when present.
 
-    client_authentication: 'body' | 'basic'
+    client_authn: 'body' | 'basic' | 'private_key_jwt'
     """
-    if client_authentication not in ("body", "basic"):
+    if client_authn not in ("body", "basic", "private_key_jwt"):
         raise TokmintError(
             500,
             "INTERNAL_ERROR",
-            "Invalid client_authentication mode.",
+            "Invalid client authentication mode.",
         )
 
     form: Dict[str, str] = {"grant_type": "client_credentials"}
@@ -81,16 +84,42 @@ async def fetch_client_credentials_token(
     default_header_pairs: List[Tuple[str, str]] = [
         ("Content-Type", "application/x-www-form-urlencoded"),
     ]
-    if client_authentication == "body":
+
+    if client_authn == "private_key_jwt":
+        if not client_assertion_jwt or not client_assertion_jwt.strip():
+            raise TokmintError(
+                500,
+                "INTERNAL_ERROR",
+                "client_assertion_jwt is required for private_key_jwt.",
+            )
+        form["client_id"] = client_id.strip()
+        form.update(client_assertion_form_fields(client_assertion_jwt.strip()))
+    elif client_authn == "body":
+        if not client_secret or not client_secret.strip():
+            raise TokmintError(
+                500,
+                "INTERNAL_ERROR",
+                "client_secret is required for body client authentication.",
+            )
         form["client_id"] = client_id
         form["client_secret"] = client_secret
+    else:
+        if not client_secret or not client_secret.strip():
+            raise TokmintError(
+                500,
+                "INTERNAL_ERROR",
+                "client_secret is required for basic client authentication.",
+            )
 
     hdrs = _header_map_from_profile(profile_headers, default_header_pairs)
 
-    if client_authentication == "basic":
+    if client_authn == "basic":
         raw = f"{client_id}:{client_secret}".encode("utf-8")
         basic = base64.b64encode(raw).decode("ascii")
         hdrs["Authorization"] = f"Basic {basic}"
+
+    if dpop_proof_jwt and dpop_proof_jwt.strip():
+        hdrs["DPoP"] = dpop_proof_jwt.strip()
 
     body = _form_encode(form)
     owns_client = http_client is None

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Encrypt a plaintext YAML under SECCONFIG_DIR → *.enc.yaml next to input.
 # Uses $SECCONFIG_DIR/.sops.yaml (public age keys in rules; no DEK on encrypt).
 # Same util checkout layout as decrypt-config.sh (see keyring/with-sops-dek.sh).

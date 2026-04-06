@@ -12,7 +12,7 @@ shell helpers; cleartext DEK bytes are not read into Python.
 - Python 3.9+
 - PyYAML: `pip install pyyaml`
 - [sops](https://github.com/getsops/sops) installed and in `PATH`: https://github.com/getsops/sops/releases or: `go install github.com/getsops/sops/v3/cmd/sops@latest`
-- Keyring initialized (source `keyring/init.sh`, run
+- Keyring initialized (source `keyring/init.bash`, run
   `rotate-kek.sh` to create DEK if needed)
 
 Call **`check_prereqs()`** before first use (or rely on **`load_config`**
@@ -98,8 +98,8 @@ files there.
 | `scripts/decrypt-config.sh` | Decrypt: **`-i`** path (or **`-`** stdin); uses `../keyring/with-sops-dek.sh` |
 | `scripts/edit-encrypted-config.sh` | Interactive **new** / **edit** with sops (cleartext in **`/dev/shm`**); see **`../keyring/EDIT_ENCRYPT_WORKFLOW.md`** |
 
-Keyring init fixtures live under `../keyring/` (`secrets-test.txt` /
-`secrets-test.enc`); see [keyring/README.md](../keyring/README.md).
+Keyring init fixtures live under `../keyring/` (`keyring-test.txt` /
+`keyring-test.enc`); see [keyring/README.md](../keyring/README.md).
 
 ## Testing
 
@@ -176,7 +176,7 @@ not change which creation rule applies.
 
 For changing secrets in place without leaving cleartext on normal disk, use
 `edit-encrypted-config.sh new` or `… edit path/to/file.enc.yaml`. It sources
-`keyring/edit-encrypted-common.sh`, uses `keyring/with-sops-dek.sh`, and stages
+`keyring/edit-encrypted-common.bash`, uses `keyring/with-sops-dek.sh`, and stages
 plaintext under `dirname(output)` for `path_regex`. See
 **`../keyring/EDIT_ENCRYPT_WORKFLOW.md`**.
 

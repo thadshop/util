@@ -10,7 +10,8 @@ def test_validate_token_path_trims_and_rejects_query() -> None:
     assert validate_token_path("  /oauth2/token  ") == "/oauth2/token"
     with pytest.raises(TokmintError) as ei:
         validate_token_path("/path?x=1")
-    assert ei.value.code == "PROFILE_CONFIG_INVALID"
+    assert ei.value.code == "PROFILE_INVALID"
+    assert ei.value.status_code == 400
 
 
 def test_build_token_url_join() -> None:

@@ -1,12 +1,15 @@
 ---
 description: Bash script formatting style for this project
-globs: "**/*.sh"
+globs: "**/*.{sh,bash}"
 alwaysApply: false
 ---
 
 > Repo-level rule. Overrides user-level bash-formatting rule.
 
 # Bash Formatting Style
+
+**Naming:** **`*.bash`** — source only; **`*.sh`** — executable entrypoints
+(see **keyring/README.md**).
 
 When editing Bash scripts in this project, follow these conventions:
 

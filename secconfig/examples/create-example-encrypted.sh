@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Create example-config.enc.yaml from example-config.yaml using sops.
-# Requires: bash secrets initialized, sops, age-keygen.
+# Requires: bash keyring initialized, sops, age-keygen.
 
 set -e
 

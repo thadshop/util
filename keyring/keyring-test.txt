@@ -1,5 +1,5 @@
 This text file is to test that encryption and decryption is working.
 DO NOT PUT ACTUAL SECRETS IN THIS FILE.
 > You can edit this file and run rotate-kek.sh to re-encrypt it.
-> The encrypted version of this file will be named secrets-test.enc.
-> init.sh validates that decryption of secrets-test.enc produces human-readable output.
+> The encrypted version of this file will be named keyring-test.enc.
+> init.bash validates that decryption of keyring-test.enc produces human-readable output.

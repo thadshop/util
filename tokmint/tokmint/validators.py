@@ -9,7 +9,11 @@ _AUTH_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]{0,127}$")
 
 
 def is_safe_config_segment(name: str) -> bool:
-    """True if name is a single path segment (alphanumeric, _, -)."""
+    """
+    True if name is a single path segment (ASCII letters, digits, _, -).
+
+    Used for profile name and secconfig subdir; rejects `/`, `.`, `..`, etc.
+    """
     return bool(name) and _SEGMENT_RE.match(name) is not None
 
 

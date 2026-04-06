@@ -9,7 +9,7 @@ from secconfig.loader import SecretsConfigError, load_config, resolve_seconfig_d
 
 from tokmint.canonical import CanonicalDomainError, canonical_domain
 from tokmint.errors import TokmintError
-from tokmint.oauth_common import validate_token_path
+from tokmint.oauth_common import validate_auth_server_path
 from tokmint.validators import is_valid_auth_scheme
 
 
@@ -64,7 +64,7 @@ def load_profile(
         raise TokmintError(
             404,
             "UNKNOWN_PROFILE",
-            "No profile file exists for this profile name.",
+            "Profile not found: no encrypted profile file for this name.",
         )
 
     try:
@@ -73,14 +73,16 @@ def load_profile(
         raise TokmintError(
             500,
             "PROFILE_LOAD_FAILED",
-            "Profile file could not be loaded.",
+            "Profile file exists but could not be read or decrypted "
+            "(check permissions, SOPS/AGE keys, and file integrity).",
         ) from exc
 
     if not isinstance(data, dict):
         raise TokmintError(
-            500,
-            "PROFILE_YAML_INVALID",
-            "Profile YAML must be a mapping at the top level.",
+            400,
+            "PROFILE_INVALID",
+            "This profile file exists but is not valid: top-level YAML "
+            "must be a mapping.",
         )
 
     _validate_profile_structure(data)
@@ -88,19 +90,20 @@ def load_profile(
 
 
 def _validate_profile_structure(data: dict[str, Any]) -> None:
-    """Validate domains, tokens, oauth, and clients."""
+    """Validate domains, tokens, and auth_servers."""
     if "domains" not in data:
         raise TokmintError(
-            500,
-            "PROFILE_YAML_INVALID",
-            "Profile YAML must contain a domains key.",
+            400,
+            "PROFILE_INVALID",
+            "This profile file exists but is not valid: missing "
+            "top-level domains key.",
         )
 
     domains = data["domains"]
     if not isinstance(domains, list) or len(domains) < 1:
         raise TokmintError(
-            500,
-            "PROFILE_CONFIG_INVALID",
+            400,
+            "PROFILE_INVALID",
             "domains must be a non-empty list.",
         )
 
@@ -108,195 +111,269 @@ def _validate_profile_structure(data: dict[str, Any]) -> None:
     for idx, row in enumerate(domains):
         if not isinstance(row, dict):
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
+                400,
+                "PROFILE_INVALID",
                 "Each domains entry must be a mapping.",
             )
         dom = row.get("domain")
         if not isinstance(dom, str) or not dom.strip():
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
+                400,
+                "PROFILE_INVALID",
                 "Each domains entry must have a non-empty domain.",
             )
         try:
             c = canonical_domain(dom)
         except CanonicalDomainError as exc:
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
+                400,
+                "PROFILE_INVALID",
                 "Invalid domain in profile configuration.",
             ) from exc
         if c in seen_domains:
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
+                400,
+                "PROFILE_INVALID",
                 "Duplicate domain in profile configuration.",
             )
         seen_domains.add(c)
+        allowed_keys = {"domain", "tokens", "auth_servers"}
+        for yaml_key in row:
+            if yaml_key not in allowed_keys:
+                raise TokmintError(
+                    400,
+                    "PROFILE_INVALID",
+                    f"Unknown key in domains row: {yaml_key!r}.",
+                )
         _validate_tokens(row.get("tokens"), idx)
-        _validate_clients_row(row.get("clients"))
-
-    _validate_oauth_if_present(data.get("oauth"))
-    if _domains_have_clients(data["domains"]) and data.get("oauth") is None:
-        raise TokmintError(
-            500,
-            "PROFILE_CONFIG_INVALID",
-            "oauth is required when clients are configured.",
-        )
+        _validate_auth_servers_row(row.get("auth_servers"), idx)
 
 
-def _domains_have_clients(domains: Any) -> bool:
-    if not isinstance(domains, list):
-        return False
-    for row in domains:
-        if not isinstance(row, dict):
-            continue
-        clients = row.get("clients")
-        if isinstance(clients, list) and len(clients) > 0:
-            return True
-    return False
-
-
-def _validate_oauth_if_present(oauth: Any) -> None:
-    """Validate oauth block when present; no-op if absent."""
-    if oauth is None:
+def _validate_auth_servers_row(auth_servers: Any, row_index: int) -> None:
+    if auth_servers is None:
         return
-    if not isinstance(oauth, dict):
+    if not isinstance(auth_servers, list):
         raise TokmintError(
-            500,
-            "PROFILE_YAML_INVALID",
-            "oauth must be a mapping when present.",
+            400,
+            "PROFILE_INVALID",
+            "auth_servers must be a list when present.",
         )
-    tp = oauth.get("token_path")
-    if tp is None:
-        raise TokmintError(
-            500,
-            "PROFILE_CONFIG_INVALID",
-            "oauth.token_path is required when oauth is present.",
-        )
-    validate_token_path(tp)
-
-    cam = oauth.get("client_authentication", "body")
-    if cam not in ("body", "basic"):
-        raise TokmintError(
-            500,
-            "PROFILE_CONFIG_INVALID",
-            "oauth.client_authentication must be 'body' or 'basic'.",
-        )
-
-    extra = oauth.get("token_form_extra")
-    if extra is not None:
-        if not isinstance(extra, dict):
+    seen_client_ids: set[str] = set()
+    for s_idx, server in enumerate(auth_servers):
+        if not isinstance(server, dict):
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "oauth.token_form_extra must be a mapping of strings.",
+                400,
+                "PROFILE_INVALID",
+                "Each auth_servers entry must be a mapping.",
             )
-        for fk, fv in extra.items():
-            if not isinstance(fk, str) or not fk.strip():
+        raw_path = server.get("path")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "Each auth server must have a non-empty path.",
+            )
+        validate_auth_server_path(raw_path)
+
+        _validate_request_headers(
+            server.get("request_headers"),
+            "auth server",
+        )
+
+        fe = server.get("form_extra")
+        if fe is not None:
+            if not isinstance(fe, dict):
                 raise TokmintError(
-                    500,
-                    "PROFILE_CONFIG_INVALID",
-                    "oauth.token_form_extra keys must be non-empty strings.",
+                    400,
+                    "PROFILE_INVALID",
+                    "form_extra must be a mapping of strings when present.",
                 )
-            if not isinstance(fv, str):
+            for fk, fv in fe.items():
+                if not isinstance(fk, str) or not fk.strip():
+                    raise TokmintError(
+                        400,
+                        "PROFILE_INVALID",
+                        "form_extra keys must be non-empty strings.",
+                    )
+                if not isinstance(fv, str):
+                    raise TokmintError(
+                        400,
+                        "PROFILE_INVALID",
+                        "form_extra values must be strings.",
+                    )
+
+        clients = server.get("clients")
+        if not isinstance(clients, list) or len(clients) < 1:
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "Each auth server must have a non-empty clients list.",
+            )
+        for client in clients:
+            if not isinstance(client, dict):
                 raise TokmintError(
-                    500,
-                    "PROFILE_CONFIG_INVALID",
-                    "oauth.token_form_extra values must be strings.",
+                    400,
+                    "PROFILE_INVALID",
+                    "Each client must be a mapping.",
                 )
+            cid = client.get("client_id")
+            if not isinstance(cid, str) or not cid.strip():
+                raise TokmintError(
+                    400,
+                    "PROFILE_INVALID",
+                    "Each client must have a non-empty client_id.",
+                )
+            cnorm = cid.strip()
+            if cnorm in seen_client_ids:
+                raise TokmintError(
+                    400,
+                    "PROFILE_INVALID",
+                    "Duplicate client_id under the same domain.",
+                )
+            seen_client_ids.add(cnorm)
+            _validate_oauth_client_profile(client)
 
-    _validate_oauth_headers(oauth.get("request_headers"))
+
+def _validate_oauth_client_profile(client: dict[str, Any]) -> None:
+    method = client.get("client_authn_method")
+    if method not in (
+        "client_secret_post",
+        "client_secret_basic",
+        "private_key_jwt",
+    ):
+        raise TokmintError(
+            400,
+            "PROFILE_INVALID",
+            "Invalid client authentication method in profile "
+            "(client_authn_method).",
+        )
+
+    sec = client.get("client_secret")
+    has_secret = isinstance(sec, str) and bool(sec.strip())
+    if method in ("client_secret_post", "client_secret_basic"):
+        if not has_secret:
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "client_secret is required for secret-based client "
+                "authentication.",
+            )
+
+    if method == "private_key_jwt":
+        pk = client.get("private_key_jwt")
+        if not isinstance(pk, dict):
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "private_key_jwt block is required for private_key_jwt.",
+            )
+        iss = pk.get("assertion_iss")
+        if not isinstance(iss, str) or not iss.strip():
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "private_key_jwt.assertion_iss is required.",
+            )
+        ttl = pk.get("assertion_ttl_seconds", 300)
+        if not isinstance(ttl, int) or ttl < 1 or ttl > 3600:
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "assertion_ttl_seconds must be an integer 1–3600.",
+            )
+
+    keys = client.get("signing_keys")
+    if method == "private_key_jwt":
+        if not isinstance(keys, list) or len(keys) < 1:
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "signing_keys required for private_key_jwt.",
+            )
+    dpop = client.get("dpop")
+    if isinstance(dpop, dict) and dpop.get("enabled") is True:
+        if not isinstance(keys, list) or len(keys) < 1:
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "signing_keys required when dpop.enabled is true.",
+            )
+
+    if isinstance(keys, list):
+        _validate_signing_keys_list(keys)
 
 
-def _validate_oauth_headers(headers: Any) -> None:
+def _validate_signing_keys_list(keys: list[Any]) -> None:
+    seen: set[str] = set()
+    for entry in keys:
+        if not isinstance(entry, dict):
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "Each signing_keys entry must be a mapping.",
+            )
+        kid = entry.get("key_id")
+        if not isinstance(kid, str) or not kid.strip():
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "Each signing key needs a non-empty key_id.",
+            )
+        kn = kid.strip()
+        if kn in seen:
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "Duplicate signing key_id on the same client.",
+            )
+        seen.add(kn)
+        has_pem = isinstance(
+            entry.get("encrypted_pem_path"),
+            str,
+        ) and bool(str(entry.get("encrypted_pem_path")).strip())
+        raw_jwk = entry.get("jwk")
+        has_jwk = isinstance(raw_jwk, dict) and len(raw_jwk) > 0
+        if has_pem == has_jwk:
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "Each signing key needs exactly one of "
+                "encrypted_pem_path or jwk.",
+            )
+
+
+def _validate_request_headers(headers: Any, ctx: str) -> None:
     if headers is None:
         return
     if not isinstance(headers, list):
         raise TokmintError(
-            500,
-            "PROFILE_CONFIG_INVALID",
-            "oauth.request_headers must be a list when present.",
+            400,
+            "PROFILE_INVALID",
+            f"{ctx} request_headers must be a list when present.",
         )
     seen_lower: set[str] = set()
     for item in headers:
         if not isinstance(item, dict):
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "Each oauth.request_headers entry must be a mapping.",
+                400,
+                "PROFILE_INVALID",
+                "Each request_headers entry must be a mapping.",
             )
         key = item.get("key")
         if not isinstance(key, str) or not key.strip():
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "Each oauth header must have a non-empty key.",
+                400,
+                "PROFILE_INVALID",
+                "Each request header must have a non-empty key.",
             )
         lk = key.strip().lower()
         if lk in seen_lower:
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "Duplicate oauth request header name (case-insensitive).",
+                400,
+                "PROFILE_INVALID",
+                "Duplicate request header name (case-insensitive).",
             )
         seen_lower.add(lk)
-
-
-def _validate_clients_row(clients: Any) -> None:
-    if clients is None:
-        return
-    if not isinstance(clients, list):
-        raise TokmintError(
-            500,
-            "PROFILE_CONFIG_INVALID",
-            "clients must be a list when present.",
-        )
-    seen_id: set[str] = set()
-    for c in clients:
-        if not isinstance(c, dict):
-            raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "Each clients entry must be a mapping.",
-            )
-        cid = c.get("client_id")
-        if not isinstance(cid, str) or not cid.strip():
-            raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "Each client must have a non-empty client_id.",
-            )
-        cnorm = cid.strip()
-        if cnorm in seen_id:
-            raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "Duplicate client_id under the same domain.",
-            )
-        seen_id.add(cnorm)
-
-        sec = c.get("client_secret")
-        has_secret = isinstance(sec, str) and bool(sec.strip())
-        keys = c.get("signing_keys")
-        has_keys = isinstance(keys, list) and len(keys) > 0
-        if not has_secret and not has_keys:
-            raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "Each client must have client_secret and/or signing_keys.",
-            )
-
-        scopes = c.get("scopes")
-        if scopes is not None and (
-            not isinstance(scopes, str) or not scopes.strip()
-        ):
-            raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
-                "client scopes must be a non-empty string when present.",
-            )
 
 
 def _validate_tokens(tokens: Any, row_index: int) -> None:
@@ -305,58 +382,58 @@ def _validate_tokens(tokens: Any, row_index: int) -> None:
         return
     if not isinstance(tokens, dict):
         raise TokmintError(
-            500,
-            "PROFILE_CONFIG_INVALID",
+            400,
+            "PROFILE_INVALID",
             "tokens must be a mapping (auth_scheme to list) when present.",
         )
     seen_ids: set[str] = set()
     for scheme_key, bucket in tokens.items():
         if not isinstance(scheme_key, str) or not scheme_key.strip():
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
+                400,
+                "PROFILE_INVALID",
                 "Each tokens key must be a non-empty auth_scheme string.",
             )
         auth_scheme = scheme_key.strip()
         if not is_valid_auth_scheme(auth_scheme):
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
+                400,
+                "PROFILE_INVALID",
                 "Invalid auth_scheme as tokens key in profile configuration.",
             )
         if not isinstance(bucket, list) or len(bucket) < 1:
             raise TokmintError(
-                500,
-                "PROFILE_CONFIG_INVALID",
+                400,
+                "PROFILE_INVALID",
                 "Each auth_scheme under tokens must map to a non-empty list.",
             )
         for item in bucket:
             if not isinstance(item, dict):
                 raise TokmintError(
-                    500,
-                    "PROFILE_CONFIG_INVALID",
+                    400,
+                    "PROFILE_INVALID",
                     "Each tokens list entry must be a mapping.",
                 )
             tid = item.get("token_id")
             if not isinstance(tid, str) or not tid.strip():
                 raise TokmintError(
-                    500,
-                    "PROFILE_CONFIG_INVALID",
+                    400,
+                    "PROFILE_INVALID",
                     "Each token entry must have a non-empty token_id.",
                 )
             tid_norm = tid.strip()
             if tid_norm in seen_ids:
                 raise TokmintError(
-                    500,
-                    "PROFILE_CONFIG_INVALID",
+                    400,
+                    "PROFILE_INVALID",
                     "Duplicate token_id under the same domain.",
                 )
             seen_ids.add(tid_norm)
             cr = item.get("credential")
             if cr is None or (isinstance(cr, str) and not cr.strip()):
                 raise TokmintError(
-                    500,
-                    "PROFILE_CONFIG_INVALID",
+                    400,
+                    "PROFILE_INVALID",
                     "Each token entry must have a credential.",
                 )
 
@@ -415,13 +492,13 @@ def find_static_token(
     )
 
 
-def find_oauth_client(
+def find_auth_server_and_client(
     data: dict[str, Any],
     request_canonical_domain: str,
     client_id: str,
-) -> dict[str, Any]:
+) -> Tuple[dict[str, Any], dict[str, Any]]:
     """
-    Return the clients[] mapping matching client_id on the domain row.
+    Return (auth_server_row, client_row) for client_id under the domain.
     """
     domains = data["domains"]
     row: Optional[dict[str, Any]] = None
@@ -439,24 +516,57 @@ def find_oauth_client(
             "No domains entry matches this domain for this profile.",
         )
 
-    clients = row.get("clients")
-    if not isinstance(clients, list):
+    auth_servers = row.get("auth_servers")
+    if not isinstance(auth_servers, list):
         raise TokmintError(
             400,
             "UNKNOWN_CLIENT_ID",
-            "No OAuth client is configured for this client_id.",
+            "No auth servers are configured for this domain "
+            "(auth_servers missing or not a list).",
         )
 
     sought = client_id.strip()
-    for c in clients:
-        if not isinstance(c, dict):
+    for server in auth_servers:
+        if not isinstance(server, dict):
             continue
-        cid = c.get("client_id")
-        if isinstance(cid, str) and cid.strip() == sought:
-            return c
+        clients = server.get("clients")
+        if not isinstance(clients, list):
+            continue
+        for c in clients:
+            if not isinstance(c, dict):
+                continue
+            cid = c.get("client_id")
+            if isinstance(cid, str) and cid.strip() == sought:
+                return server, c
 
     raise TokmintError(
         400,
         "UNKNOWN_CLIENT_ID",
         "No OAuth client is configured for this client_id.",
+    )
+
+
+def find_signing_key_row(
+    client_row: dict[str, Any],
+    key_id: str,
+) -> dict[str, Any]:
+    """Return signing_keys[] entry matching key_id."""
+    keys = client_row.get("signing_keys")
+    if not isinstance(keys, list):
+        raise TokmintError(
+            400,
+            "PROFILE_INVALID",
+            "Invalid profile: client is missing signing_keys.",
+        )
+    sought = key_id.strip()
+    for entry in keys:
+        if not isinstance(entry, dict):
+            continue
+        kid = entry.get("key_id")
+        if isinstance(kid, str) and kid.strip() == sought:
+            return entry
+    raise TokmintError(
+        400,
+        "UNKNOWN_KEY_ID",
+        "No signing key matches this key_id.",
     )

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Print the age *public* key (recipient) for the DEK stored in dek.encrypted.
 # Use for .sops.yaml "age:" and sharing only the public line (age1...).
 # Private key bytes exist only briefly in a chmod 600 file under /dev/shm.
@@ -12,8 +14,8 @@ _script_path="$(realpath "${BASH_SOURCE[0]}")"
 _script_dir="$(dirname "${_script_path}")"
 _get_dek="${_script_dir}/get-dek.sh"
 
-# shellcheck source=lib.sh
-source "${_script_dir}/lib.sh"
+# shellcheck source=lib.bash
+source "${_script_dir}/lib.bash"
 
 usage() {
     printf '%s\n' "usage: $(basename "${0}") [--help]" >&2
@@ -34,15 +36,15 @@ if [[ ${#} -gt 0 ]]; then
     exit 1
 fi
 
-if ! secrets_no_debug; then
+if ! keyring_no_debug; then
     printf '%s\n' \
-        "secrets: $(basename "${0}"): refused (debug mode enabled)" >&2
+        "keyring: $(basename "${0}"): refused (debug mode enabled)" >&2
     exit 1
 fi
 
-if ! secrets_check_keyring; then
+if ! keyring_check_keyring; then
     printf '%s\n' \
-        "secrets: $(basename "${0}"): keyring check failed" >&2
+        "keyring: $(basename "${0}"): keyring check failed" >&2
     exit 1
 fi
 

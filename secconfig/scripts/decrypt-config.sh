@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Decrypt a sops-encrypted YAML under SECCONFIG_DIR.
 # DEK / sops env: keyring/with-sops-dek.sh (hard dependency on util checkout).
 # Default: decrypted YAML goes to /dev/null (verify only). Use -o to capture.
