@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Interactive sops workflow: cleartext only in /dev/shm; uses .sops.yaml rules.
 # Use: edit-encrypted-config.sh [options] new | edit ENCRYPTED_FILE
 #
-# Shared prompts: keyring/edit-encrypted-common.sh
+# Shared prompts: keyring/edit-encrypted-common.bash
 # -c overrides $SECCONFIG_DIR/.sops.yaml. Plaintext is staged under dirname(output)
 # so sops path_regex can match.
 
@@ -12,17 +14,17 @@ _script_path="$(realpath "${BASH_SOURCE[0]}")"
 _script_dir="$(dirname "${_script_path}")"
 _keyring_dir="$(cd "${_script_dir}/../../keyring" && pwd)"
 
-# shellcheck source=../../keyring/lib.sh
-source "${_keyring_dir}/lib.sh"
+# shellcheck source=../../keyring/lib.bash
+source "${_keyring_dir}/lib.bash"
 
-if ! secrets_no_debug; then
+if ! keyring_no_debug; then
     printf '%s\n' "edit-encrypted-config: refused (xtrace or verbose enabled)" >&2
     exit 1
 fi
 
 export EEC_MSG_PREFIX="edit-encrypted-config"
-# shellcheck source=../../keyring/edit-encrypted-common.sh
-source "${_keyring_dir}/edit-encrypted-common.sh"
+# shellcheck source=../../keyring/edit-encrypted-common.bash
+source "${_keyring_dir}/edit-encrypted-common.bash"
 
 _with_sops_dek="${_keyring_dir}/with-sops-dek.sh"
 _default_get_dek="${_keyring_dir}/get-dek.sh"

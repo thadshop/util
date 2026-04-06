@@ -10,8 +10,10 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 dependencies = [
+    "cryptography>=41.0.0",
     "fastapi>=0.100.0",
     "httpx>=0.24.0",
+    "PyJWT>=2.8.0",
     "uvicorn[standard]>=0.22.0",
 ]
 

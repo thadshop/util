@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Decrypt data using a KEK (Key Encryption Key) stored in the keyring.
 # The KEK is retrieved using get-kek.sh.
 # Default: plaintext goes to /dev/null (verify decrypt without exposing data).

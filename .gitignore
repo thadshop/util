@@ -8,7 +8,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 
-# Encrypted files anywhere in the repo (DEK, sops outputs, secrets-test.enc, etc.)
+# Encrypted files anywhere in the repo (DEK, sops outputs, keyring-test.enc, etc.)
 *.enc
 *.enc.*
 *.encrypted

@@ -93,12 +93,12 @@ def check_prereqs() -> None:
             "go install github.com/getsops/sops/v3/cmd/sops@latest"
         )
 
-    # get-dek.sh (Bash secrets)
+    # get-dek.sh (Bash keyring)
     dek_path = _default_get_dek_path()
     if not dek_path.exists():
         missing.append(
             f"get-dek.sh: not found at {dek_path}. "
-            "Source keyring/init.sh, run rotate-kek.sh, "
+            "Source keyring/init.bash, run rotate-kek.sh, "
             "ensure repo layout."
         )
     elif not os.access(dek_path, os.X_OK):

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Example: call tokmint POST /v1/token with curl.
 # Prerequisites: tokmint running (see tokmint/README.md), profile file:
 #   $SECCONFIG_DIR/tokmint/{profile}.enc.yaml

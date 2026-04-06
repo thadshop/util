@@ -29,7 +29,7 @@ artifact is always the **encrypted** file.
 | **`keyring/edit-encrypted.sh`** | **`encrypt.sh`** / **`decrypt.sh`** (KEK + OpenSSL) | Standalone blobs, **not** sops. |
 | **`secconfig/scripts/edit-encrypted-config.sh`** | **sops** + **`with-sops-dek.sh`** | **`SECCONFIG_DIR`**, **`.sops.yaml`**, YAML/PEM rules. |
 
-Shared interactive prompts live in **`keyring/edit-encrypted-common.sh`**
+Shared interactive prompts live in **`keyring/edit-encrypted-common.bash`**
 (source only). Callers set **`EEC_MSG_PREFIX`** before sourcing it.
 
 ## Use case 1 — New cleartext, first encryption
@@ -67,7 +67,7 @@ prints a suggested **`mv -f …`** recovery line (**`%q`**-escaped paths).
 - **Prereqs:** **`sops`**, **`with-sops-dek.sh`**, **`get-dek.sh`**; **`GET_DEK_PATH`**
   or **`-k`**.
 
-Refuses **`xtrace`** / **`verbose`** (via **`keyring/lib.sh`**).
+Refuses **`xtrace`** / **`verbose`** (via **`keyring/lib.bash`**).
 
 ## OpenSSL-specific (`edit-encrypted.sh`)
 
@@ -90,4 +90,4 @@ wrapper; **`edit-encrypted-config.sh`** composes it for encrypt/decrypt/validate
 
 - **`secconfig/README.md`** — **`SECCONFIG_DIR`**, **`scripts/`**.
 - **`keyring/README.md`**, **`keyring/with-sops-dek.sh`**, **`keyring/edit-encrypted.sh`**,
-  **`keyring/edit-encrypted-common.sh`**, **`secconfig/scripts/edit-encrypted-config.sh`**.
+  **`keyring/edit-encrypted-common.bash`**, **`secconfig/scripts/edit-encrypted-config.sh`**.

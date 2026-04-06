@@ -2,7 +2,9 @@
 FastAPI application: POST /v1/token (Mode A static; Mode B client credentials).
 """
 
-from typing import Optional, Union
+import json
+import logging
+from typing import Any, Optional, Union
 
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -10,17 +12,44 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tokmint.canonical import CanonicalDomainError, canonical_domain
+from tokmint.dpop import build_dpop_proof_jwt
 from tokmint.errors import TokmintError, error_json_response
+from tokmint.oauth_client_assertion import build_client_assertion_jwt
 from tokmint.oauth_common import build_token_url
+from tokmint.oauth_keys import load_private_key_from_signing_key_row
 from tokmint.oauth_upstream import fetch_client_credentials_token
 from tokmint.profile_load import (
-    find_oauth_client,
+    find_auth_server_and_client,
+    find_signing_key_row,
     find_static_token,
     load_profile,
     require_resolved_seconfig_dir,
 )
 from tokmint.settings import get_seconfig_subdir
 from tokmint.validators import is_safe_config_segment
+
+logger = logging.getLogger(__name__)
+
+
+def _tokmint_error_log_event(
+    request: Request,
+    exc: TokmintError,
+) -> dict[str, Any]:
+    # One JSON line per error for grep/journald; omit client_id (sensitivity).
+    q = request.query_params
+    event: dict[str, Any] = {
+        "event": "tokmint_error",
+        "code": exc.code,
+        "http_status": exc.status_code,
+        "detail": exc.detail,
+        "method": request.method,
+        "path": request.url.path,
+    }
+    if q.get("profile") is not None:
+        event["profile"] = q.get("profile")
+    if q.get("domain") is not None:
+        event["domain"] = q.get("domain")
+    return event
 
 
 def _query_unset(raw: Optional[str]) -> bool:
@@ -38,6 +67,72 @@ def _query_value(raw: Optional[str]) -> Optional[str]:
     return None if s == "" else s
 
 
+def _dpop_enabled(client_row: dict) -> bool:
+    dpop = client_row.get("dpop")
+    return isinstance(dpop, dict) and dpop.get("enabled") is True
+
+
+def _dpop_allowlist(client_row: dict) -> Optional[list[str]]:
+    dpop = client_row.get("dpop")
+    if not isinstance(dpop, dict):
+        return None
+    allow = dpop.get("signing_keys")
+    if not isinstance(allow, list) or len(allow) < 1:
+        return None
+    out = []
+    for x in allow:
+        if isinstance(x, str) and x.strip():
+            out.append(x.strip())
+    return out if out else None
+
+
+def _ensure_dpop_key_allowed(
+    client_row: dict,
+    effective_kid: str,
+) -> None:
+    allow = _dpop_allowlist(client_row)
+    if allow is not None and effective_kid not in allow:
+        raise TokmintError(
+            400,
+            "INVALID_DPOP_KEY",
+            "DPoP key_id is not in the client dpop.signing_keys allowlist.",
+        )
+
+
+def _resolve_dpop_key_id(
+    client_row: dict,
+    method: str,
+    key_id_param: Optional[str],
+    dpop_key_id_param: Optional[str],
+) -> str:
+    if dpop_key_id_param is not None:
+        kid = dpop_key_id_param.strip()
+        if not kid:
+            raise TokmintError(
+                400,
+                "INVALID_PARAMETER",
+                "dpop_key_id must be non-empty when provided.",
+            )
+        _ensure_dpop_key_allowed(client_row, kid)
+        return kid
+    if method == "private_key_jwt":
+        if not key_id_param or not key_id_param.strip():
+            raise TokmintError(
+                400,
+                "MISSING_PARAMETER",
+                "key_id is required for private_key_jwt.",
+            )
+        kid = key_id_param.strip()
+        _ensure_dpop_key_allowed(client_row, kid)
+        return kid
+    raise TokmintError(
+        400,
+        "MISSING_PARAMETER",
+        "dpop_key_id is required when using client secret authentication "
+        "with DPoP.",
+    )
+
+
 app = FastAPI(title="tokmint", version="0.1.0")
 
 
@@ -46,6 +141,15 @@ async def tokmint_error_handler(
     request: Request,
     exc: TokmintError,
 ) -> JSONResponse:
+    line = json.dumps(
+        _tokmint_error_log_event(request, exc),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    if exc.status_code >= 500:
+        logger.error("%s", line)
+    else:
+        logger.warning("%s", line)
     return error_json_response(exc.status_code, exc.code, exc.detail)
 
 
@@ -86,6 +190,20 @@ async def starlette_http_handler(
     )
 
 
+def _upstream_client_authn(method: str) -> str:
+    if method == "client_secret_post":
+        return "body"
+    if method == "client_secret_basic":
+        return "basic"
+    if method == "private_key_jwt":
+        return "private_key_jwt"
+    raise TokmintError(
+        500,
+        "INTERNAL_ERROR",
+        "Unknown client authentication method.",
+    )
+
+
 @app.post("/v1/token")
 async def mint_token(
     profile: Optional[str] = Query(None),
@@ -93,9 +211,10 @@ async def mint_token(
     token_id: Optional[str] = Query(None),
     client_id: Optional[str] = Query(None),
     key_id: Optional[str] = Query(None),
+    dpop_key_id: Optional[str] = Query(None),
 ) -> dict[str, Union[str, int]]:
     """
-    Mode A: static token. Mode B: OAuth client_credentials (client secret).
+    Mode A: static token. Mode B: OAuth client_credentials.
     """
     require_resolved_seconfig_dir()
 
@@ -109,8 +228,9 @@ async def mint_token(
     if not is_safe_config_segment(prof):
         raise TokmintError(
             400,
-            "INVALID_PROFILE_NAME",
-            "Profile name contains invalid characters.",
+            "UNSUPPORTED_PROFILE_NAME",
+            "profile query value must be one filename-safe segment: "
+            "ASCII letters, digits, underscore, and hyphen only.",
         )
 
     subdir = get_seconfig_subdir()
@@ -141,6 +261,7 @@ async def mint_token(
     cid = _query_value(client_id)
     tid = _query_value(token_id)
     kid = _query_value(key_id)
+    dkid = _query_value(dpop_key_id)
 
     if cid is not None and tid is not None:
         raise TokmintError(
@@ -150,36 +271,43 @@ async def mint_token(
         )
 
     if cid is not None:
-        if kid is not None:
-            raise TokmintError(
-                400,
-                "NOT_IMPLEMENTED",
-                "private_key_jwt (key_id) is not implemented yet.",
-            )
-
         pdata = load_profile(prof, subdir)
-        oauth = pdata.get("oauth")
-        if not isinstance(oauth, dict):
+        auth_server, client_row = find_auth_server_and_client(
+            pdata,
+            canon_req,
+            cid,
+        )
+
+        if dkid is not None and not _dpop_enabled(client_row):
             raise TokmintError(
                 400,
-                "OAUTH_CONFIG_MISSING",
-                "Profile has no oauth configuration for token requests.",
-            )
-        if oauth.get("token_path") is None:
-            raise TokmintError(
-                400,
-                "OAUTH_CONFIG_MISSING",
-                "oauth.token_path is missing.",
+                "DPOP_DISABLED",
+                "DPoP is disabled for this client in the profile.",
             )
 
-        client_row = find_oauth_client(pdata, canon_req, cid)
-        secret_raw = client_row.get("client_secret")
-        if not isinstance(secret_raw, str) or not secret_raw.strip():
+        method_raw = client_row.get("client_authn_method")
+        if not isinstance(method_raw, str):
             raise TokmintError(
                 400,
-                "CLIENT_CONFIG_INVALID",
-                "client_secret is required for this client (Phase 2a).",
+                "PROFILE_INVALID",
+                "Invalid profile: client authentication method is missing "
+                "or not a string (client_authn_method).",
             )
+        method = method_raw.strip()
+
+        path_raw = auth_server.get("path")
+        if not isinstance(path_raw, str):
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "Invalid profile: auth server path missing.",
+            )
+        token_url = build_token_url(canon_req, path_raw)
+
+        extra = auth_server.get("form_extra")
+        extra_map: Optional[dict[str, str]] = None
+        if isinstance(extra, dict):
+            extra_map = {str(k): str(v) for k, v in extra.items()}
 
         scopes_opt = client_row.get("scopes")
         scopes_str = (
@@ -188,27 +316,98 @@ async def mint_token(
             else None
         )
 
-        tp = oauth.get("token_path")
-        assert isinstance(tp, str)
-        token_url = build_token_url(canon_req, tp)
+        seconfig_base = require_resolved_seconfig_dir()
+        assertion_jwt: Optional[str] = None
+        secret_str: Optional[str] = None
+        dpop_proof: Optional[str] = None
 
-        cam = oauth.get("client_authentication", "body")
-        if cam not in ("body", "basic"):
-            cam = "body"
+        if method == "private_key_jwt":
+            if kid is None:
+                raise TokmintError(
+                    400,
+                    "MISSING_PARAMETER",
+                    "key_id is required for private_key_jwt.",
+                )
+            sk_row = find_signing_key_row(client_row, kid)
+            pk_cfg = client_row.get("private_key_jwt")
+            if not isinstance(pk_cfg, dict):
+                raise TokmintError(
+                    400,
+                    "PROFILE_INVALID",
+                    "Invalid profile: private_key_jwt block missing.",
+                )
+            iss = pk_cfg.get("assertion_iss")
+            if not isinstance(iss, str) or not iss.strip():
+                raise TokmintError(
+                    400,
+                    "PROFILE_INVALID",
+                    "Invalid profile: private_key_jwt.assertion_iss invalid.",
+                )
+            subject = pk_cfg.get("assertion_sub")
+            if isinstance(subject, str) and subject.strip():
+                sub_s = subject.strip()
+            else:
+                sub_s = cid.strip()
+            aud_raw = pk_cfg.get("assertion_aud")
+            audience = (
+                aud_raw.strip()
+                if isinstance(aud_raw, str) and aud_raw.strip()
+                else token_url
+            )
+            ttl = pk_cfg.get("assertion_ttl_seconds", 300)
+            ttl_i = ttl if isinstance(ttl, int) else 300
+            priv = load_private_key_from_signing_key_row(sk_row, seconfig_base)
+            jwt_hdr = sk_row.get("jwt_header")
+            assertion_jwt = build_client_assertion_jwt(
+                issuer=iss.strip(),
+                subject=sub_s,
+                audience=audience,
+                private_key=priv,
+                ttl_seconds=ttl_i,
+                profile_jwt_headers=jwt_hdr,
+            )
+            sec_for_upstream: Optional[str] = None
+        else:
+            if kid is not None:
+                raise TokmintError(
+                    400,
+                    "INVALID_PARAMETER",
+                    "key_id must be unset for client secret authentication.",
+                )
+            raw_sec = client_row.get("client_secret")
+            if not isinstance(raw_sec, str) or not raw_sec.strip():
+                raise TokmintError(
+                    400,
+                    "PROFILE_INVALID",
+                    "Invalid profile: client_secret missing.",
+                )
+            secret_str = raw_sec.strip()
+            sec_for_upstream = secret_str
 
-        extra = oauth.get("token_form_extra")
-        extra_map: Optional[dict[str, str]] = None
-        if isinstance(extra, dict):
-            extra_map = {str(k): str(v) for k, v in extra.items()}
+        if _dpop_enabled(client_row):
+            eff_dkid = _resolve_dpop_key_id(client_row, method, kid, dkid)
+            sk_dpop = find_signing_key_row(client_row, eff_dkid)
+            dpop_priv = load_private_key_from_signing_key_row(
+                sk_dpop,
+                seconfig_base,
+            )
+            dpop_proof = build_dpop_proof_jwt(
+                private_key=dpop_priv,
+                http_method="POST",
+                http_url=token_url,
+            )
 
+        upstream_authn = _upstream_client_authn(method)
         result = await fetch_client_credentials_token(
             token_url,
             cid.strip(),
-            secret_raw.strip(),
+            sec_for_upstream,
             scopes_str,
-            oauth.get("request_headers"),
-            str(cam),
+            auth_server.get("request_headers"),
+            upstream_authn,
             extra_map,
+            client_assertion_jwt=assertion_jwt,
+            dpop_proof_jwt=dpop_proof,
         )
 
         out: dict[str, Union[str, int]] = {
@@ -225,6 +424,12 @@ async def mint_token(
             400,
             "KEY_ID_NOT_ALLOWED",
             "key_id must be unset for static token mode.",
+        )
+    if dkid is not None:
+        raise TokmintError(
+            400,
+            "INVALID_PARAMETER",
+            "dpop_key_id must be unset for static token mode.",
         )
 
     if tid is None:

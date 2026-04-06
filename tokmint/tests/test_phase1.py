@@ -320,8 +320,8 @@ def test_p1_17_duplicate_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> No
             "token_id": "a",
         },
     )
-    assert r.status_code == 500
-    assert r.json()["code"] == "PROFILE_CONFIG_INVALID"
+    assert r.status_code == 400
+    assert r.json()["code"] == "PROFILE_INVALID"
 
 
 def test_p1_18_duplicate_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -346,8 +346,8 @@ def test_p1_18_duplicate_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> 
             "token_id": "dup",
         },
     )
-    assert r.status_code == 500
-    assert r.json()["code"] == "PROFILE_CONFIG_INVALID"
+    assert r.status_code == 400
+    assert r.json()["code"] == "PROFILE_INVALID"
 
 
 def test_duplicate_token_id_across_auth_schemes(
@@ -376,8 +376,8 @@ def test_duplicate_token_id_across_auth_schemes(
             "token_id": "same",
         },
     )
-    assert r.status_code == 500
-    assert r.json()["code"] == "PROFILE_CONFIG_INVALID"
+    assert r.status_code == 400
+    assert r.json()["code"] == "PROFILE_INVALID"
 
 
 def test_p1_19_missing_domains(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -393,8 +393,8 @@ def test_p1_19_missing_domains(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Non
             "token_id": "default",
         },
     )
-    assert r.status_code == 500
-    assert r.json()["code"] == "PROFILE_YAML_INVALID"
+    assert r.status_code == 400
+    assert r.json()["code"] == "PROFILE_INVALID"
 
 
 def test_p1_20_case_insensitive_match(

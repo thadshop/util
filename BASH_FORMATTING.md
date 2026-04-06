@@ -1,10 +1,13 @@
 ---
 description: Bash script formatting style for this project
-globs: "**/*.sh"
+globs: "**/*.{sh,bash}"
 alwaysApply: true
 ---
 
 # Bash Formatting Style
+
+**Naming:** **`*.bash`** — source only; **`*.sh`** — executable entrypoints
+(see **keyring/README.md**).
 
 When editing Bash scripts in this project, follow these conventions:
 
@@ -38,12 +41,12 @@ When editing Bash scripts in this project, follow these conventions:
 ## Example
 
 ```bash
-secrets_kek_exists() {
-    # Return 0 if KEK exists in persistent keyring, 1 otherwise
-    local persistent_id
-    persistent_id=$(secrets_get_persistent_keyring)
-    [[ -n "${persistent_id}" ]] && \
-      keyctl search "${persistent_id}" user \
-      "${SECRETS_KEYRING_KEY_NAME}" >/dev/null 2>&1
+keyring_kek_exists() {
+    # Return 0 if KEK exists in keyring, 1 otherwise
+    local keyring_id
+    keyring_id=$(keyring_get_keyring)
+    [[ -n "${keyring_id}" ]] && \
+      keyctl search "${keyring_id}" user \
+      "${KEYRING_KEK_KEY_NAME}" >/dev/null 2>&1
 }
 ```

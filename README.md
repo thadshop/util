@@ -16,6 +16,9 @@ secrets on disk** for that stack.
 
 **[→ Full documentation: keyring/README.md](keyring/README.md)**
 
+Scripts use **`.bash`** for files you **`source`** and **`.sh`** for files you
+**run**; see the note at the top of that README.
+
 ### `secconfig/`
 
 Python package: load **YAML** configs with **sops**-encrypted values (uses
@@ -31,7 +34,7 @@ pip install -e secconfig/
 ## Where to keep real secrets
 
 Do **not** store production secrets in this repo’s sample paths
-(`keyring/secrets-test.*`, `secconfig/examples/`). Keep real encrypted configs
+(`keyring/keyring-test.*`, `secconfig/examples/`). Keep real encrypted configs
 and `.sops.yaml` in **your application** directory; use `SECCONFIG_DIR` and
 `load_config()` as described in **secconfig**’s README.
 

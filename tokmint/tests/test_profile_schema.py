@@ -109,15 +109,28 @@ def test_reject_invalid_scheme_as_key() -> None:
         validate_profile_document(data)
 
 
-def test_reject_oauth_token_path_without_leading_slash() -> None:
+def test_reject_auth_server_path_without_leading_slash() -> None:
     import jsonschema
 
     data = {
-        "oauth": {"token_path": "oauth2/v1/token"},
         "domains": [
             {
                 "domain": "tenant.example.com",
                 "tokens": _TOK_BEARER,
+                "auth_servers": [
+                    {
+                        "path": "oauth2/v1/token",
+                        "clients": [
+                            {
+                                "client_id": "c",
+                                "client_authn_method": (
+                                    "client_secret_post"
+                                ),
+                                "client_secret": "s",
+                            }
+                        ],
+                    }
+                ],
             }
         ],
     }

@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
+# Executable: run this file; do not `source` it.
+#
 # Test that decryption will work (KEK in keyring, DEK decrypts,
-# secrets-test.enc when present).
+# keyring-test.enc when present).
 # Exit 0 if OK; exit 1 with error message if not.
 
 _script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-# shellcheck source=lib.sh
-source "${_script_dir}/lib.sh"
+# shellcheck source=lib.bash
+source "${_script_dir}/lib.bash"
 
-if ! secrets_test_decryption; then
-    printf '%s\n' 'secrets: decryption test failed' >&2
+if ! keyring_test_decryption; then
+    printf '%s\n' 'keyring: decryption test failed' >&2
     exit 1
 fi
 
-printf '%s\n' 'secrets: decryption test passed' >&2
+printf '%s\n' 'keyring: decryption test passed' >&2
 exit 0
