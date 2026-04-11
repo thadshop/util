@@ -9,7 +9,7 @@ formatter itself — StreamHandler adds one).
 Usage::
 
     from tokmint.logging_config import configure_logging
-    configure_logging("DEBUG")
+    configure_logging("VERBOSE")
 
 Callers log structured data via ``extra``::
 
@@ -17,12 +17,21 @@ Callers log structured data via ``extra``::
 
 The ``event`` key (or the formatted message when ``event`` is absent) is
 always present in the output.  Secrets must never appear in ``extra``.
+
+Log levels (most to least verbose):
+    DEBUG   (10) — JWT internals, key algorithm selection, DPoP proof fields
+    VERBOSE (15) — HTTP request/response headers and bodies (secrets redacted)
+    INFO    (20) — Normal operation events (startup, token_minted, errors)
 """
 
 import datetime
 import json
 import logging
 from typing import Any
+
+# Custom level between DEBUG and INFO for HTTP request/response tracing.
+VERBOSE = 15
+logging.addLevelName(VERBOSE, "VERBOSE")
 
 # LogRecord attributes that are part of stdlib's internal bookkeeping.
 # These are filtered out so they don't appear as extra JSON fields.
@@ -92,9 +101,11 @@ def configure_logging(log_level: str) -> None:
 
     Should be called once at process startup, before uvicorn is started.
     ``log_level`` must be a valid Python logging level name
-    (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    (DEBUG, VERBOSE, INFO, WARNING, ERROR, CRITICAL).
     """
-    level = getattr(logging, log_level.upper(), logging.INFO)
+    level = logging.getLevelName(log_level.upper())
+    if not isinstance(level, int):
+        level = logging.INFO
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
 

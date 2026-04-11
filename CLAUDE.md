@@ -38,6 +38,9 @@ python3 -m venv .venv
 
 # Start service
 .venv/bin/python -m tokmint
+
+# Start service with VERBOSE logging, pretty array output per request
+TOKMINT_LOG_LEVEL=VERBOSE .venv/bin/python -m tokmint 2>&1 | .venv/bin/jsonl-fmt -a
 ```
 
 ### secconfig
@@ -88,7 +91,7 @@ bash keyring/edit-encrypted.sh <file.enc>
 - **Mode A** — static token stored directly in profile YAML
 - **Mode B** — OAuth 2.0 client credentials; profile contains endpoint, client ID, and private key reference; service fetches token from upstream; supports DPoP
 
-Profile YAML schema is validated against `tokmint/schemas/profile.schema.json` (JSON Schema Draft 2020-12). See `tokmint/examples/profile.reference.yaml` for annotated reference.
+Profile YAML schema is validated against `tokmint/schemas/profile.schema.json` (JSON Schema Draft 2020-12). See `tokmint/examples/tokmint.example.profile.yaml` for annotated reference.
 
 ### File naming conventions (keyring/ and secconfig/scripts/)
 
@@ -102,6 +105,8 @@ Profile YAML schema is validated against `tokmint/schemas/profile.schema.json` (
 | `SECCONFIG_DIR` | secconfig, tokmint | Root dir for encrypted configs and `.sops.yaml` |
 | `TOKMINT_SECCONFIG_SUBDIR` | tokmint | Subdir under `SECCONFIG_DIR` for profiles (default: `tokmint`) |
 | `TOKMINT_PORT` | tokmint | uvicorn port (default: 9876) |
+| `TOKMINT_LOG_LEVEL` | tokmint | Log verbosity: `DEBUG`, `VERBOSE`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (default: `INFO`) |
+| `TOKMINT_JSONL_FMT_FLUSH_MS` | jsonl-fmt | Burst flush timeout in ms for `-a` mode (default: 1000) |
 | `SOPS_AGE_KEY_FILE` | set by `with-sops-dek.sh` | Temp path to cleartext DEK under `/dev/shm` |
 
 ## Formatting

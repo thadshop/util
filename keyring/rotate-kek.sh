@@ -101,8 +101,7 @@ _keyring_rotate_kek() {
         return 1
     fi
 
-    if ! keyring_encrypt_dek_with_kek "${new_kek}" "${dek}" "${_dek_file}"; \
-      then
+    if ! keyring_encrypt_dek_with_kek "${new_kek}" "${dek}" "${_dek_file}"; then
         printf '%s\n' "keyring: failed to encrypt DEK at ${_dek_file}" >&2
         new_kek=''
         old_kek=''

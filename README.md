@@ -31,6 +31,22 @@ pip install -e secconfig/
 
 **[→ Full documentation: secconfig/README.md](secconfig/README.md)**
 
+### `tokmint/`
+
+Local HTTP service (FastAPI, `localhost:9876`) that mints API tokens for
+tools like Postman. Reads **sops**-encrypted YAML profiles via **secconfig**:
+**Mode A** returns a static credential; **Mode B** performs an OAuth 2.0
+**client_credentials** grant supporting **`client_secret_post`**,
+**`client_secret_basic`**, and **`private_key_jwt`** client authentication,
+with optional **DPoP**-bound tokens.
+
+```bash
+pip install -e secconfig/ -e tokmint/
+python -m tokmint
+```
+
+**[→ Full documentation: tokmint/README.md](tokmint/README.md)**
+
 ## Where to keep real secrets
 
 Do **not** store production secrets in this repo’s sample paths

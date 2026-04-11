@@ -551,8 +551,11 @@ Postman query strings.
 segment; no path escape from `{SECCONFIG_DIR}/{subdirectory}/`).
 - Validate `**domain`** per **Canonical `domain` algorithm**; Mode B assumes
 **HTTPS** when building the IdP token URL.
-- **Do not log** tokens, PEM, assertion JWTs, `Authorization` material, or
-`**oauth.request_headers`** values.
+- **Do not log** tokens, PEM, full `Authorization` header values, or
+`**oauth.request_headers`** values.  The `VERBOSE` log level redacts
+`client_secret`, the `Authorization` header, and the `client_assertion`
+JWT signature; the header and payload of `client_assertion` are logged
+as they contain only public identifiers (issuer, audience, expiry).
 - Reject `**key` / `value**` pairs that allow **header injection** (e.g.
 embedded CR/LF) at load or request time.
 
@@ -822,7 +825,7 @@ domains:
 ## Deferred / next iteration
 
 - **`clients`** shape under each **`domains[]`** entry (Phase 2+): see
-  **`examples/profile.reference.yaml`** (list of **`client_id`** entries with
+  **`examples/tokmint.example.profile.yaml`** (list of **`client_id`** entries with
   optional **`client_secret`** and **`signing_keys`** for **`key_id`**).
 - **OAuth token request** details when using `client_secret` (form fields vs
 Basic auth).

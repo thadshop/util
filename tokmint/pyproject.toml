@@ -26,6 +26,7 @@ dev = [
 
 [project.scripts]
 tokmint = "tokmint.__main__:main"
+jsonl-fmt = "tokmint.jsonl_fmt:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

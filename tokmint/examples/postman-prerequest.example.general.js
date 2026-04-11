@@ -1,21 +1,3 @@
-// This is a copy of postman-prerequest.example-general.js, adapted to enable
-// usage of Postman collections provided by Okta.
-// Okta collections need minimal modification to work with tokmint.
-//
-// ********************
-// What needs to be modified in Okta's collection:
-// - Add a collection variable named `tokmint-base_url`.  It's value should
-//   be the URL to the tokmint service, http://localhost:9876 by default.
-// - Set the collection's Auth Type to "No Auth"
-// - Optional collection variable `tokmint-okta_api_hostname_suffix` (per
-//   collection): appended to the first DNS label of `tokmint-domain` so API
-//   requests can target a family-specific host (e.g. `-admin` → …-admin.okta…)
-//   while tokmint still uses the base tenant host from the profile. If this
-//   variable is not defined on the collection, it is treated as an empty string.
-// - This script sets `yourOktaDomain` from `tokmint-domain` plus that suffix
-//   (hostname only; `https://` stripped when present).
-// ********************
-
 // Structure of this file:
 //   • If tokmint-use_prerequest_script is the string "true" → only the
 //     tokmint block below runs, then the script stops.
@@ -27,8 +9,6 @@
 //  Postman collection variables:
 //  - Always required:
 //    - tokmint-base_url — URL of tokmint service (default http://127.0.0.1:9876)
-//  - Optional (but likely needed):
-//    - tokmint-okta_api_hostname_suffix (see above for description)
 //  Postman environment variables
 //  - Always required:
 //    - tokmint-use_prerequest_script = true
@@ -63,56 +43,6 @@
         // Above here, add any scripting you want to run
         // before the tokmint scripting.
         // ******************************
-
-        // handle setting {{yourOktaDomain}} from {{tokmint-domain}}
-        function tokmintHostnameFromDomainEnv(raw) {
-            const s = String(raw).trim();
-            if (!s) {
-                return '';
-            }
-            try {
-                if (s.indexOf('://') !== -1) {
-                    return new URL(s).hostname;
-                }
-            } catch (e1) {
-                // fall through
-            }
-            const slash = s.indexOf('/');
-            if (slash !== -1) {
-                return s.slice(0, slash).trim();
-            }
-            return s;
-        }
-        function tokmintOktaHostnameWithSuffix(hostname, suffixRaw) {
-            const host = String(hostname).trim();
-            let suf = '';
-            if (suffixRaw !== undefined && suffixRaw !== null) {
-                suf = String(suffixRaw);
-            }
-            if (!host) {
-                return '';
-            }
-            const dot = host.indexOf('.');
-            if (dot === -1) {
-                return host + suf;
-            }
-            return host.slice(0, dot) + suf + host.slice(dot);
-        }
-        const domTrim = String(pm.environment.get('tokmint-domain')).trim();
-        let suffixRaw = pm.collectionVariables.get(
-            'tokmint-okta_api_hostname_suffix'
-        );
-        if (suffixRaw === undefined || suffixRaw === null) {
-            suffixRaw = '';
-        }
-        const oktaApiHost = tokmintOktaHostnameWithSuffix(
-            tokmintHostnameFromDomainEnv(domTrim),
-            suffixRaw
-        );
-        if (oktaApiHost.length) {
-            pm.collectionVariables.set('yourOktaDomain', oktaApiHost);
-        }
-
 
         // Optional: copy values from Environment into Collection variables so
         // {{existing_collection_var}} in URLs/bodies matches e.g.
@@ -288,13 +218,7 @@
         const _tokmintRawUrl = pm.request.url.toString()
             .replace(/%7B%7B/gi, '{{')
             .replace(/%7D%7D/gi, '}}');
-        // Substitute {{yourOktaDomain}} directly from the value computed above
-        // as a fast-path: pm.collectionVariables writes made mid-script may
-        // not yet be visible to pm.variables in all Postman versions.
-        const _tokmintUrlPreresolved = oktaApiHost
-            ? _tokmintRawUrl.replace(/\{\{yourOktaDomain\}\}/g, oktaApiHost)
-            : _tokmintRawUrl;
-        const _tokmintResolvedUrl = resolveVars(_tokmintUrlPreresolved)
+        const _tokmintResolvedUrl = resolveVars(_tokmintRawUrl)
             .split('#')[0];
         const _tokmintHtm = pm.request.method;
 

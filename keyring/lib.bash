@@ -159,9 +159,12 @@ keyring_kek_exists() {
     # Return 0 if KEK exists in keyring, 1 otherwise
     local keyring_id
     keyring_id=$(keyring_get_keyring)
-    [[ -n "${keyring_id}" ]] && \
-      keyctl search "${keyring_id}" user \
-      "${KEYRING_KEK_KEY_NAME}" >/dev/null 2>&1
+    if [[ -n "${keyring_id}" ]]; then
+        keyctl search "${keyring_id}" user \
+            "${KEYRING_KEK_KEY_NAME}" >/dev/null 2>&1
+    else
+        return 1
+    fi
 }
 
 _keyring_dek_decrypt_fail() {

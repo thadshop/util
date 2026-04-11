@@ -71,8 +71,7 @@ if [[ "${output_file}" == "/dev/null" ]]; then
       " To get output, specify -o <file> or -o /dev/stdout." >&2
 fi
 
-if ! keyring_decrypt_dek_with_kek "${kek}" "${_dek_file}" "${output_file}"; \
-  then
+if ! keyring_decrypt_dek_with_kek "${kek}" "${_dek_file}" "${output_file}"; then
     printf '%s\n' "keyring: ${_script_path}: failed (decrypt)" >&2
     printf '%s\n' 'keyring: wrong KEK or corrupted file' >&2
     kek=''
