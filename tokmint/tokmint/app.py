@@ -359,13 +359,13 @@ async def mint_token(
             ttl = pk_cfg.get("assertion_ttl_seconds", 300)
             ttl_i = ttl if isinstance(ttl, int) else 300
             priv = load_private_key_from_signing_key_row(sk_row, seconfig_base)
-            jwt_hdr = sk_row.get("jwt_header")
+            sk_kid = sk_row.get("kid")
             _iss = iss.strip()
             _sub = sub_s
             _aud = audience
             _priv = priv
             _ttl = ttl_i
-            _hdr = jwt_hdr
+            _hdr = {"kid": sk_kid} if sk_kid else None
 
             def assertion_factory(
                 _i=_iss,

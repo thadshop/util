@@ -312,19 +312,19 @@ def _validate_signing_keys_list(keys: list[Any]) -> None:
                 "PROFILE_INVALID",
                 "Each signing_keys entry must be a mapping.",
             )
-        kid = entry.get("key_id")
+        kid = entry.get("kid")
         if not isinstance(kid, str) or not kid.strip():
             raise TokmintError(
                 400,
                 "PROFILE_INVALID",
-                "Each signing key needs a non-empty key_id.",
+                "Each signing key needs a non-empty kid.",
             )
         kn = kid.strip()
         if kn in seen:
             raise TokmintError(
                 400,
                 "PROFILE_INVALID",
-                "Duplicate signing key_id on the same client.",
+                "Duplicate signing kid on the same client.",
             )
         seen.add(kn)
         has_pem = isinstance(
@@ -550,7 +550,7 @@ def find_signing_key_row(
     client_row: dict[str, Any],
     key_id: str,
 ) -> dict[str, Any]:
-    """Return signing_keys[] entry matching key_id."""
+    """Return signing_keys[] entry matching kid."""
     keys = client_row.get("signing_keys")
     if not isinstance(keys, list):
         raise TokmintError(
@@ -562,11 +562,11 @@ def find_signing_key_row(
     for entry in keys:
         if not isinstance(entry, dict):
             continue
-        kid = entry.get("key_id")
+        kid = entry.get("kid")
         if isinstance(kid, str) and kid.strip() == sought:
             return entry
     raise TokmintError(
         400,
         "UNKNOWN_KEY_ID",
-        "No signing key matches this key_id.",
+        "No signing key matches this kid.",
     )

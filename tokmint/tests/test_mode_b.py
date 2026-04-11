@@ -42,15 +42,13 @@ MODE_B_JWT_YAML = f"""domains:
             private_key_jwt:
               assertion_iss: https://idp.example.com/oauth2/default
             signing_keys:
-              - key_id: k1
+              - kid: k1
                 jwk:
                   kty: {_TEST_EC_JWK["kty"]}
                   crv: {_TEST_EC_JWK["crv"]}
                   x: {_TEST_EC_JWK["x"]}
                   y: {_TEST_EC_JWK["y"]}
                   d: {_TEST_EC_JWK["d"]}
-                jwt_header:
-                  kid: test-kid
 """
 
 MODE_B_JWT_DPOP_YAML = f"""domains:
@@ -63,15 +61,13 @@ MODE_B_JWT_DPOP_YAML = f"""domains:
             private_key_jwt:
               assertion_iss: https://idp.example.com/oauth2/default
             signing_keys:
-              - key_id: k1
+              - kid: k1
                 jwk:
                   kty: {_TEST_EC_JWK["kty"]}
                   crv: {_TEST_EC_JWK["crv"]}
                   x: {_TEST_EC_JWK["x"]}
                   y: {_TEST_EC_JWK["y"]}
                   d: {_TEST_EC_JWK["d"]}
-                jwt_header:
-                  kid: test-kid
             dpop:
               enabled: true
 """
@@ -292,7 +288,7 @@ def test_dpop_key_id_when_disabled_errors(
             private_key_jwt:
               assertion_iss: https://idp.example.com/
             signing_keys:
-              - key_id: k1
+              - kid: k1
                 jwk:
                   kty: {_TEST_EC_JWK["kty"]}
                   crv: {_TEST_EC_JWK["crv"]}
@@ -367,7 +363,7 @@ def test_secret_client_dpop_requires_dpop_key_id(
             client_authn_method: client_secret_post
             client_secret: s3cret
             signing_keys:
-              - key_id: dk
+              - kid: dk
                 jwk:
                   kty: {_TEST_EC_JWK["kty"]}
                   crv: {_TEST_EC_JWK["crv"]}
@@ -406,7 +402,7 @@ def test_secret_client_dpop_with_dpop_key_id_calls_upstream(
             client_authn_method: client_secret_post
             client_secret: s3cret
             signing_keys:
-              - key_id: dk
+              - kid: dk
                 jwk:
                   kty: {_TEST_EC_JWK["kty"]}
                   crv: {_TEST_EC_JWK["crv"]}
@@ -458,14 +454,14 @@ def test_dpop_allowlist_rejects_key_id_not_listed(
             private_key_jwt:
               assertion_iss: https://idp.example.com/
             signing_keys:
-              - key_id: k1
+              - kid: k1
                 jwk:
                   kty: {_TEST_EC_JWK["kty"]}
                   crv: {_TEST_EC_JWK["crv"]}
                   x: {_TEST_EC_JWK["x"]}
                   y: {_TEST_EC_JWK["y"]}
                   d: {_TEST_EC_JWK["d"]}
-              - key_id: k2
+              - kid: k2
                 jwk:
                   kty: {_TEST_EC_JWK2["kty"]}
                   crv: {_TEST_EC_JWK2["crv"]}

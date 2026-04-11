@@ -8,16 +8,74 @@ import base64
 import json
 import logging
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode
 
 import httpx
 
 from tokmint.dpop import build_dpop_proof_jwt
 from tokmint.errors import TokmintError
 from tokmint.jwt_sign import PrivateKeyTypes
+from tokmint.logging_config import VERBOSE
 from tokmint.oauth_client_assertion import client_assertion_form_fields
 
 logger = logging.getLogger(__name__)
+
+_REDACTED = "<Redacted>"
+# Form fields whose values are fully redacted in logs.
+_SECRET_FORM_KEYS: frozenset[str] = frozenset({"client_secret"})
+# Request header names (lowercase) whose values must never appear in logs.
+_SECRET_HEADER_KEYS: frozenset[str] = frozenset({"authorization"})
+
+
+def _decode_jwt_for_log(token: str) -> Any:
+    """
+    Decode a JWT's header and payload for logging; redact the signature.
+
+    Only the signature carries secret material. The header and payload
+    are base64url-encoded JSON and safe to log. Returns a structured
+    dict on success, or _REDACTED on any parse failure.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return _REDACTED
+    try:
+        def _b64_decode(s: str) -> Any:
+            # urlsafe_b64decode requires padded input.
+            padded = s + "=" * (-len(s) % 4)
+            return json.loads(base64.urlsafe_b64decode(padded))
+        return {
+            "header": _b64_decode(parts[0]),
+            "payload": _b64_decode(parts[1]),
+            "signature": _REDACTED,
+        }
+    except Exception:
+        return _REDACTED
+
+
+def _redact_form_fields(encoded_body: str) -> Dict[str, Any]:
+    """
+    Return decoded form fields for logging.
+
+    client_assertion is decoded (header+payload logged, signature
+    redacted). client_secret is fully redacted.
+    """
+    result: Dict[str, Any] = {}
+    for k, v in parse_qsl(encoded_body, keep_blank_values=True):
+        if k == "client_assertion":
+            result[k] = _decode_jwt_for_log(v)
+        elif k in _SECRET_FORM_KEYS:
+            result[k] = _REDACTED
+        else:
+            result[k] = v
+    return result
+
+
+def _redact_request_headers(headers: Dict[str, str]) -> Dict[str, str]:
+    """Return headers with secret values replaced."""
+    return {
+        k: (_REDACTED if k.lower() in _SECRET_HEADER_KEYS else v)
+        for k, v in headers.items()
+    }
 
 
 def _header_map_from_profile(
@@ -191,14 +249,16 @@ async def fetch_client_credentials_token(
             ).strip()
         return hdrs, _form_encode(form)
 
-    logger.debug("", extra={
-        "event": "upstream_request",
-        "url": token_url,
-        "client_authn": client_authn,
-    })
-
     async def _run(client: httpx.AsyncClient) -> httpx.Response:
         hdrs, body = _build_attempt(None)
+        if logger.isEnabledFor(VERBOSE):
+            logger.log(VERBOSE, "", extra={
+                "event": "upstream_request",
+                "url": token_url,
+                "method": "POST",
+                "request_headers": _redact_request_headers(hdrs),
+                "request_body": _redact_form_fields(body),
+            })
         response = await _post_once(client, token_url, hdrs, body)
 
         if (
@@ -208,11 +268,22 @@ async def fetch_client_credentials_token(
         ):
             server_nonce = response.headers.get("DPoP-Nonce")
             if server_nonce:
-                logger.debug("", extra={
-                    "event": "dpop_nonce_retry",
-                    "status": response.status_code,
-                })
+                if logger.isEnabledFor(VERBOSE):
+                    logger.log(VERBOSE, "", extra={
+                        "event": "dpop_nonce_retry",
+                        "status": response.status_code,
+                        "response_headers": dict(response.headers),
+                    })
                 hdrs, body = _build_attempt(server_nonce)
+                if logger.isEnabledFor(VERBOSE):
+                    logger.log(VERBOSE, "", extra={
+                        "event": "upstream_request",
+                        "url": token_url,
+                        "method": "POST",
+                        "attempt": 2,
+                        "request_headers": _redact_request_headers(hdrs),
+                        "request_body": _redact_form_fields(body),
+                    })
                 response = await _post_once(client, token_url, hdrs, body)
 
         return response
@@ -229,11 +300,13 @@ async def fetch_client_credentials_token(
         response = await _run(http_client)
 
     if response.status_code < 200 or response.status_code >= 300:
-        logger.debug("", extra={
-            "event": "upstream_error",
-            "status": response.status_code,
-            **_upstream_error_fields(response),
-        })
+        if logger.isEnabledFor(VERBOSE):
+            logger.log(VERBOSE, "", extra={
+                "event": "upstream_error",
+                "status": response.status_code,
+                "response_headers": dict(response.headers),
+                "response_body": _upstream_error_fields(response),
+            })
         raise TokmintError(
             502,
             "UPSTREAM_ERROR",
@@ -278,4 +351,15 @@ async def fetch_client_credentials_token(
     exp = payload.get("expires_in")
     if isinstance(exp, (int, float)) and exp >= 0:
         out["expires_in"] = int(exp)
+    if logger.isEnabledFor(VERBOSE):
+        logger.log(VERBOSE, "", extra={
+            "event": "upstream_response",
+            "status": response.status_code,
+            "response_headers": dict(response.headers),
+            "response_body": {
+                "token_type": out["token_type"],
+                "expires_in": out.get("expires_in"),
+                "access_token": _REDACTED,
+            },
+        })
     return out

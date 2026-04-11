@@ -7,9 +7,10 @@ import os
 DEFAULT_PORT = 9876
 DEFAULT_SECCONFIG_SUBDIR = "tokmint"
 DEFAULT_LOG_LEVEL = "INFO"
+DEFAULT_JSONL_FMT_FLUSH_MS = 1000
 
 _VALID_LOG_LEVELS = frozenset({
-    "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL",
+    "DEBUG", "VERBOSE", "INFO", "WARNING", "ERROR", "CRITICAL",
 })
 
 
@@ -18,13 +19,17 @@ def get_listen_port() -> int:
     raw = os.environ.get("TOKMINT_PORT", "").strip()
     if not raw:
         return DEFAULT_PORT
-    return int(raw)
+    else:
+        return int(raw)
 
 
 def get_secconfig_subdir() -> str:
     """Directory name under SECCONFIG_DIR for profile YAML."""
     raw = os.environ.get("TOKMINT_SECCONFIG_SUBDIR", "").strip()
-    return raw if raw else DEFAULT_SECCONFIG_SUBDIR
+    if raw:
+        return raw
+    else:
+        return DEFAULT_SECCONFIG_SUBDIR
 
 
 def get_log_level() -> str:
@@ -32,11 +37,26 @@ def get_log_level() -> str:
     Log level for the tokmint logger (default INFO).
 
     Reads TOKMINT_LOG_LEVEL; falls back to INFO for unrecognised values.
+    Valid values: DEBUG, VERBOSE, INFO, WARNING, ERROR, CRITICAL.
     """
     raw = os.environ.get("TOKMINT_LOG_LEVEL", "").strip().upper()
     if raw in _VALID_LOG_LEVELS:
         return raw
-    return DEFAULT_LOG_LEVEL
+    else:
+        return DEFAULT_LOG_LEVEL
+
+
+def get_jsonl_fmt_flush_ms() -> int:
+    """
+    Burst flush timeout for jsonl-fmt -a mode (default 1000 ms).
+
+    Reads TOKMINT_JSONL_FMT_FLUSH_MS; falls back to default for
+    missing or non-positive values.
+    """
+    raw = os.environ.get("TOKMINT_JSONL_FMT_FLUSH_MS", "").strip()
+    if raw.isdigit() and int(raw) > 0:
+        return int(raw)
+    return DEFAULT_JSONL_FMT_FLUSH_MS
 
 
 def get_settings_summary() -> dict[str, object]:

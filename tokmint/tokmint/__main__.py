@@ -19,11 +19,17 @@ def main() -> None:
     logger = logging.getLogger("tokmint")
     logger.info("", extra={"event": "startup", **settings})
 
+    _UVICORN_LEVELS = frozenset({
+        "critical", "error", "warning", "info", "debug", "trace",
+    })
+    uvicorn_level = log_level.lower()
+    if uvicorn_level not in _UVICORN_LEVELS:
+        uvicorn_level = "info"
     uvicorn.run(
         "tokmint.app:app",
         host="127.0.0.1",
         port=int(settings["port"]),
-        log_level=log_level.lower(),
+        log_level=uvicorn_level,
         factory=False,
     )
 

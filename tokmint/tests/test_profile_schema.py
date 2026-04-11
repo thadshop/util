@@ -21,7 +21,7 @@ def test_schema_loads() -> None:
 
 
 def test_reference_example_validates() -> None:
-    ref = Path(__file__).resolve().parent.parent / "examples" / "profile.reference.yaml"
+    ref = Path(__file__).resolve().parent.parent / "examples" / "tokmint.example.profile.yaml"
     data = yaml.safe_load(ref.read_text(encoding="utf-8"))
     validate_profile_document(data)
 

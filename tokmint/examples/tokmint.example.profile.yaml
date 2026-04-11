@@ -1,0 +1,115 @@
+# tokmint profile example — all supported use cases in one file.
+# Formal schema: tokmint/tokmint/schemas/profile.schema.json
+#   (JSON Schema Draft 2020-12).
+# Encrypt to $SECCONFIG_DIR/tokmint/{profile}.enc.yaml before use.
+# Remove sections you do not need.  Secrets may be plain (local-only)
+# or sops-encrypted via secconfig.
+#
+# Request mapping:
+#   profile   → picks {TOKMINT_SECCONFIG_SUBDIR}/{profile}.enc.yaml
+#   domain    → matches domains[].domain (case-insensitive ASCII hostname)
+# Mode A: client_id unset; token_id selects an entry under tokens.
+#   tokens: Authorization scheme (SSWS, Bearer, …)
+#           → list of { token_id, credential }
+#           token_id must be unique across all schemes for the domain.
+# Mode B: client_id set; token_id unset.
+#   auth_servers[].path + domain → token endpoint URL
+#   client_id → selects a client under that auth server
+#   key_id    → selects a signing_keys[] entry by kid (private_key_jwt)
+#   dpop_key_id → overrides key_id for DPoP signing key selection
+#
+# -----------------------------------------------------------------------------
+
+domains:
+  # ---------------------------------------------------------------------------
+  # Domain 1: Okta tenant — demonstrates all Mode A and Mode B variants.
+  # ---------------------------------------------------------------------------
+  - domain: dev-12345.okta.com
+
+    # --- Mode A: static API tokens -------------------------------------------
+    tokens:
+      SSWS:
+        - token_id: default
+          credential: replace-or-sops-encrypt
+        - token_id: automation
+          credential: replace-or-sops-encrypt
+
+    # --- Mode B: OAuth clients grouped by authorization server ---------------
+    auth_servers:
+
+      # Org authorization server — required for Okta management API scopes
+      # (okta.groups.*, okta.users.*, etc.).  The OAuth app must also have an
+      # admin role assigned in the Okta admin console.
+      - path: /oauth2/v1/token
+        request_headers:
+          - key: Accept
+            value: application/json
+
+        clients:
+
+          # private_key_jwt with DPoP — full example.
+          # kid must match the Key ID registered on the Okta application's
+          # JWKS.  Pass key_id=<kid> (and optionally dpop_key_id=<kid>) to
+          # the tokmint /v1/token endpoint.
+          - client_id: 0oa_example_private_jwt
+            client_authn_method: private_key_jwt
+            # scopes: okta.groups.read okta.users.read
+            private_key_jwt:
+              assertion_iss: 0oa_example_private_jwt
+              # assertion_sub: optional; defaults to client_id
+              # assertion_aud: optional; defaults to token endpoint URL
+              assertion_ttl_seconds: 300
+            signing_keys:
+              - kid: replace-with-okta-jwks-kid
+                encrypted_pem_path: tokmint/keys/okta-primary.pem.enc
+              - kid: replace-with-rotation-kid
+                encrypted_pem_path: tokmint/keys/okta-rotation.pem.enc
+            # dpop:
+            #   enabled: true
+            #   signing_keys:
+            #     - replace-with-okta-jwks-kid
+            #     - replace-with-rotation-kid
+
+      # Custom authorization server — for non-management API scopes.
+      # Demonstrates form_extra (e.g. audience parameter required by some
+      # IdPs) and a client_secret_post client alongside a JWT client.
+      - path: /oauth2/ausaaaaaaaaaaaaaaaa/v1/token
+        request_headers:
+          - key: Accept
+            value: application/json
+        # form_extra: additional form fields sent with every token request.
+        # form_extra:
+        #   audience: https://dev-12345.okta.com
+
+        clients:
+
+          # client_secret_post — simplest Mode B.
+          - client_id: 0oa_example_secret
+            client_authn_method: client_secret_post
+            client_secret: replace-or-sops-encrypt
+            # scopes: okta.apps.read
+
+          # private_key_jwt with inline JWK (no encrypted PEM file needed).
+          # Use EC P-256 coordinates from your registered key.
+          - client_id: 0oa_example_jwk
+            client_authn_method: private_key_jwt
+            private_key_jwt:
+              assertion_iss: 0oa_example_jwk
+              assertion_ttl_seconds: 300
+            signing_keys:
+              - kid: replace-with-kid
+                jwk:
+                  kty: EC
+                  crv: P-256
+                  x: replace-with-base64url-x-coord
+                  y: replace-with-base64url-y-coord
+                  d: replace-with-base64url-private-scalar
+
+  # ---------------------------------------------------------------------------
+  # Domain 2: minimal — Mode A static Bearer token only.
+  # ---------------------------------------------------------------------------
+  - domain: partner.example.com
+    tokens:
+      Bearer:
+        - token_id: default
+          credential: replace-or-sops-encrypt

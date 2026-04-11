@@ -1,8 +1,14 @@
 # tokmint
 
-Local HTTP service that returns **API tokens** from YAML profiles: **Mode A**
-static tokens or **Mode B** OAuth 2.0 **client_credentials** (client secret).
-See **`DESIGN.md`** for the full contract. **`examples/profile.reference.yaml`**
+Local HTTP service that returns **API tokens** from YAML profiles:
+
+- **Mode A** — static credential stored in the profile
+- **Mode B** — OAuth 2.0 **client_credentials** grant; supports
+  **`client_secret_post`**, **`client_secret_basic`**, and
+  **`private_key_jwt`** client authentication, with optional **DPoP**-bound
+  tokens
+
+See **`DESIGN.md`** for the full contract. **`examples/tokmint.example.profile.yaml`**
 is a commented layout for Mode A, Mode B, and intended OAuth/JWT fields.
 
 The machine-readable definition is **JSON Schema** (Draft 2020-12):
@@ -15,7 +21,7 @@ Optional **`jsonschema`** extra (included in **`.[dev]`**) enables
 import yaml
 from pathlib import Path
 from tokmint.profile_schema import validate_profile_document
-p = Path('examples/profile.reference.yaml')
+p = Path('examples/tokmint.example.profile.yaml')
 validate_profile_document(yaml.safe_load(p.read_text()))
 print('ok')
 "
@@ -63,27 +69,50 @@ curl -s -X POST 'http://127.0.0.1:9876/v1/token?profile=test&domain=tenant.examp
 ```
 
 **Mode B** (OAuth client credentials; set **`client_id`**; omit **`token_id`**).
-Profile must define top-level **`oauth.token_path`** and a matching **`clients`**
-row with **`client_secret`** for that **`client_id`** under the request
-**`domain`**. Tokmint **`POST`s to** `https://{domain}{oauth.token_path}` with
-TLS verification enabled.
+The profile selects the token endpoint via **`auth_servers[].path`** + request
+**`domain`**. Tokmint POSTs to `https://{domain}{path}` with TLS verification
+enabled.
+
+**`client_secret_post`** or **`client_secret_basic`**:
 
 ```bash
 curl -s -X POST \
   'http://127.0.0.1:9876/v1/token?profile=myprofile&domain=idp.example.com&client_id=my-client-id'
 ```
 
-Optional profile fields: **`oauth.client_authentication`** (`body` or `basic`),
-**`oauth.token_form_extra`** (extra form fields), per-client **`scopes`**.
-**`key_id`** (private_key_jwt) returns **`400`** **`NOT_IMPLEMENTED`** until a
-later release.
+**`private_key_jwt`** — pass **`key_id`** to select a signing key by `kid`:
+
+```bash
+curl -s -X POST \
+  'http://127.0.0.1:9876/v1/token?profile=myprofile&domain=idp.example.com&client_id=my-client-id&key_id=my-kid'
+```
+
+With **DPoP** — also pass **`dpop_key_id`** (defaults to `key_id`),
+**`dpop_htm`**, and **`dpop_htu`**:
+
+```bash
+curl -s -X POST \
+  'http://127.0.0.1:9876/v1/token?profile=myprofile&domain=idp.example.com&client_id=my-client-id&key_id=my-kid&dpop_htm=GET&dpop_htu=https%3A%2F%2Fidp.example.com%2Fapi%2Fv1%2Fusers'
+```
+
+See **`examples/tokmint.example.profile.yaml`** for the full profile structure
+covering all client authentication methods.
 
 ## SOPS-encrypted profile (manual test)
 
 **`.sops.yaml` for `tokmint/`:** copy patterns from
-**`examples/dot.sops.yaml.tokmint.example`** into **`$SECCONFIG_DIR/.sops.yaml`**
-(order matters: put **before** any broad `.*\.yaml$` rule). It encrypts only
-keys named **`credential`** and **`client_secret`**.
+**`examples/sops.example.dot-sops.yaml`** into **`$SECCONFIG_DIR/.sops.yaml`**
+(order matters: put **before** any broad `.*\.yaml$` rule). The
+`encrypted_regex` covers **`credential`**, **`client_secret`**, **`jwk`**, and
+keys ending in **`_secret`**.  For **`private_key_jwt`** profiles the signing
+key material is either:
+
+- **Inline JWK** (`signing_keys[].jwk`) — the entire `jwk` map is
+  sops-encrypted as one unit; the non-secret fields (`kty`, `crv`, `kid`) are
+  only visible after decryption.
+- **Encrypted PEM file** (`signing_keys[].encrypted_pem_path`) — the path
+  itself is plaintext in the profile; the PEM file it points to is encrypted
+  separately with `keyring/encrypt.sh`.
 
 Tokmint loads profiles through **`secconfig.load_config`**, which decrypts
 **sops** files the same way as plain YAML. Requirements match
@@ -137,6 +166,47 @@ rm -f "${SECCONFIG_DIR}/tokmint/test.plain.yaml"
 
 If decryption fails (wrong key, missing sops, **`get-dek`** error), the API
 returns **500** with **`PROFILE_LOAD_FAILED`** (see **`DESIGN.md`**).
+
+## Logging
+
+Set **`TOKMINT_LOG_LEVEL`** to control log verbosity (default: **`INFO`**):
+
+| Level | What is logged |
+|---|---|
+| `DEBUG` | JWT internals, key algorithm selection, DPoP proof fields |
+| `VERBOSE` | Full HTTP request/response headers and bodies (secrets redacted) |
+| `INFO` | Normal operation: startup, token minted, errors |
+| `WARNING` / `ERROR` | Degraded or failed requests |
+
+All output is JSON Lines (one JSON object per line) on **stderr**.
+
+### jsonl-fmt
+
+**`jsonl-fmt`** is a companion CLI (installed alongside **`tokmint`**) that
+formats the JSON Lines stream for easier reading and copy-paste.
+
+```bash
+# Pretty-print each log line as it arrives (default)
+python -m tokmint 2>&1 | jsonl-fmt
+
+# Emit a pretty JSON array after each burst of activity
+TOKMINT_LOG_LEVEL=VERBOSE python -m tokmint 2>&1 | jsonl-fmt -a
+
+# Compact array — minimal copy-paste into a JSON beautifier (e.g. CyberChef)
+TOKMINT_LOG_LEVEL=VERBOSE python -m tokmint 2>&1 | jsonl-fmt -ac
+```
+
+In **`-a`** mode each burst of lines is collected into a single array and
+emitted after a quiet period, so one token request typically produces one
+array.  Each entry is wrapped as **`{"log": {...}}`** for structured log
+objects or **`{"raw": "..."}`** for unstructured lines (uvicorn access log,
+etc.).
+
+The flush timeout defaults to **1000 ms** and can be overridden:
+
+```bash
+TOKMINT_JSONL_FMT_FLUSH_MS=500 python -m tokmint 2>&1 | jsonl-fmt -a
+```
 
 ## Tests
 

@@ -180,7 +180,7 @@
                 "type": "string",
                 "minLength": 1
               },
-              "description": "Allowlist of key_id values allowed for DPoP."
+              "description": "Allowlist of kid values allowed for DPoP."
             }
           }
         }
@@ -237,13 +237,14 @@
     },
     "signingKey": {
       "type": "object",
-      "required": ["key_id"],
+      "required": ["kid"],
       "additionalProperties": false,
       "properties": {
-        "key_id": {
+        "kid": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^[a-zA-Z0-9_-]+$"
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "description": "Key ID: used both as the profile identifier and as the kid claim in the JWT header."
         },
         "encrypted_pem_path": {
           "type": "string",
@@ -252,21 +253,17 @@
         "jwk": {
           "type": "object",
           "minProperties": 1
-        },
-        "jwt_header": {
-          "type": "object",
-          "additionalProperties": true
         }
       },
       "oneOf": [
         {
-          "required": ["key_id", "encrypted_pem_path"],
+          "required": ["kid", "encrypted_pem_path"],
           "not": {
             "required": ["jwk"]
           }
         },
         {
-          "required": ["key_id", "jwk"],
+          "required": ["kid", "jwk"],
           "not": {
             "required": ["encrypted_pem_path"]
           }
