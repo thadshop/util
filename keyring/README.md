@@ -83,7 +83,8 @@ kek=$(keyring_get_kek) || exit 1
 - `edit-encrypted.sh` — Interactive **new** / **edit** for **`encrypt.sh`**
   / **`decrypt.sh`** (OpenSSL + KEK): cleartext only under **`/dev/shm`**,
   validate decrypt to **`/dev/null`**, backup prompts on **edit**. For
-  **sops** profiles, use **`secconfig/scripts/edit-encrypted-config.sh`**.
+  **sops** profiles, use **`secconfig/scripts/new-encrypted-config.sh`** or
+  **`secconfig/scripts/edit-encrypted-config.sh`**.
   See **`EDIT_ENCRYPT_WORKFLOW.md`** in this directory.
 - `rotate-kek.sh` — Rotate KEK and re-encrypt DEK. Creates DEK if missing.
 - `encrypt.sh` / `decrypt.sh` — OpenSSL AES helpers using the KEK; **`-i`**

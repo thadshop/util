@@ -1,11 +1,14 @@
 // Structure of this file:
 //   • If tokmint-use_prerequest_script is the string "true" → only the
 //     tokmint block below runs, then the script stops.
-//   • Otherwise → code in the “Non-tokmint” section runs (paste your
+//   • Otherwise → code in the "Non-tokmint" section runs (paste your
 //     vendor/token logic there). That section does NOT run when the flag
 //     is true.
 //
 // Requirements for tokmint block:
+//  Postman collection variables
+//  - Always required:
+//    - tokmint-base_url — URL of tokmint service (default http://127.0.0.1:9876)
 //  Postman environment variables
 //  - Always required:
 //    - tokmint-use_prerequest_script = true
@@ -20,6 +23,12 @@
 //    - tokmint-dpop_key_id — optional; use when DPoP is enabled: required for
 //      client_secret + DPoP, or to pick a different key than key_id for the
 //      DPoP proof (private_key_jwt + DPoP)
+//
+// DPoP support:
+//   When tokmint returns token_type "DPoP", the script automatically sets both
+//   Authorization: DPoP <token> and DPoP: <proof> on the request.
+//   No extra configuration is required — tokmint builds the proof using the
+//   current request method and URL (with {{variables}} resolved).
 
 (function () {
     if (pm.environment.get('tokmint-use_prerequest_script') === 'true') {
@@ -61,6 +70,48 @@
             if (val.length) {
                 pm.collectionVariables.set(collectionKey, val);
             }
+        }
+
+        /**
+         * Resolve {{varname}} placeholders in a string using pm.variables,
+         * which searches environment, collection, and global scopes in order.
+         * Unresolved placeholders are replaced with an empty string.
+         *
+         * This is necessary for computing the DPoP htu claim: Postman
+         * substitutes variables in request URLs after the pre-request script
+         * runs, so pm.request.url.toString() returns the raw template string.
+         */
+        function resolveVars(str) {
+            var s = String(str);
+            // Iterate up to 10 times to handle nested variable references
+            // like {{baseUrl}} → https://{{yourOktaDomain}} → https://host.
+            for (var _pass = 0; _pass < 10; _pass++) {
+                var _changed = false;
+                var _next = s.replace(
+                    /\{\{([^}]+)\}\}/g,
+                    function (match, name) {
+                        var key = name.trim();
+                        var val = pm.variables.get(key);
+                        // pm.variables uses a snapshot from script start and
+                        // does not reflect collection variables set mid-script.
+                        // Fall back to pm.collectionVariables (live value).
+                        if (val === null || val === undefined) {
+                            val = pm.collectionVariables.get(key);
+                        }
+                        if (val !== null && val !== undefined) {
+                            _changed = true;
+                            return String(val);
+                        }
+                        return match; // leave placeholder for next pass
+                    }
+                );
+                s = _next;
+                if (!_changed) {
+                    break;
+                }
+            }
+            // Collapse any still-unresolved placeholders to empty string.
+            return s.replace(/\{\{[^}]+\}\}/g, '');
         }
 
         /**
@@ -157,6 +208,20 @@
             );
         }
 
+        // Resolve the current request URL for use as the DPoP htu claim.
+        // pm.request.url.toString() returns the raw template string with
+        // {{variables}} unsubstituted, so we resolve them here.  The fragment
+        // is stripped per RFC 9449.
+        // Postman percent-encodes { and } in the hostname, so
+        // pm.request.url.toString() may contain %7B%7BvarName%7D%7D instead
+        // of {{varName}}.  Decode only those delimiters before resolving.
+        const _tokmintRawUrl = pm.request.url.toString()
+            .replace(/%7B%7B/gi, '{{')
+            .replace(/%7D%7D/gi, '}}');
+        const _tokmintResolvedUrl = resolveVars(_tokmintRawUrl)
+            .split('#')[0];
+        const _tokmintHtm = pm.request.method;
+
         let q;
         if (cid !== '') {
             const parts = [
@@ -173,6 +238,17 @@
             }
             if (dkid !== '') {
                 parts.push('dpop_key_id=' + encodeURIComponent(dkid));
+            }
+            // Always send dpop_htm/dpop_htu for Mode B so tokmint can build
+            // the API-request DPoP proof when the upstream token is DPoP-type.
+            // Harmless when the token is Bearer — server ignores these params.
+            if (_tokmintHtm && _tokmintResolvedUrl) {
+                parts.push(
+                    'dpop_htm=' + encodeURIComponent(_tokmintHtm)
+                );
+                parts.push(
+                    'dpop_htu=' + encodeURIComponent(_tokmintResolvedUrl)
+                );
             }
             q = parts.join('&');
         } else if (tid !== '') {
@@ -253,6 +329,16 @@
                         key: 'Authorization',
                         value: scheme + ' ' + secret,
                     });
+
+                    // DPoP: when tokmint returned a proof for the API request,
+                    // attach it as the DPoP header.
+                    if (body.dpop_proof &&
+                            typeof body.dpop_proof === 'string') {
+                        pm.request.headers.upsert({
+                            key: 'DPoP',
+                            value: body.dpop_proof,
+                        });
+                    }
                 }
             );
         }
