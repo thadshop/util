@@ -27,7 +27,14 @@ artifact is always the **encrypted** file.
 | Script | Stack | When to use |
 |--------|--------|-------------|
 | **`keyring/edit-encrypted.sh`** | **`encrypt.sh`** / **`decrypt.sh`** (KEK + OpenSSL) | Standalone blobs, **not** sops. |
-| **`secconfig/scripts/edit-encrypted-config.sh`** | **sops** + **`with-sops-dek.sh`** | **`SECCONFIG_DIR`**, **`.sops.yaml`**, YAML/PEM rules. |
+| **`secconfig/scripts/new-encrypted-config.sh`** | **sops** + **`with-sops-dek.sh`** | New ciphertext; **`SECCONFIG_DIR`**, **`.sops.yaml`**. |
+| **`secconfig/scripts/edit-encrypted-config.sh`** | same | Edit an existing encrypted file **in place** (after backup prompts). |
+
+Implementation: **`secconfig/scripts/.work-encrypted-config.bash`** (source
+only); entry scripts set **`EEC_MSG_PREFIX`** then call **`wek_new`** or
+**`wek_edit`**. With no file argument, **`edit-encrypted-config.sh`** lists
+ciphertexts under **`SECCONFIG_DIR`** when possible, otherwise prompts for a
+path (**`/dev/tty`** if available, else **stdin**; empty input aborts).
 
 Shared interactive prompts live in **`keyring/edit-encrypted-common.bash`**
 (source only). Callers set **`EEC_MSG_PREFIX`** before sourcing it.
@@ -38,8 +45,9 @@ Shared interactive prompts live in **`keyring/edit-encrypted-common.bash`**
    its **full path**, and instructs the user to save and return.
 2. **Edit:** User edits and saves **outside** the workflow.
 3. **Continue:** User presses Enter; optional **empty-file** **`p` / `e` /
-   `a`** loop; user specifies the **new** encrypted path (and may confirm
-   **`mkdir`**).
+   `a`** loop; user specifies the **new** encrypted path (**`new-encrypted-config.sh`**
+   with **`SECCONFIG_DIR`**: directory list with file hints, then basename, or
+   full path; may confirm **`mkdir`**).
 4. **Finish:** Workflow encrypts, **validates**, **`mv`** into place, removes
    shm cleartext.
 
@@ -56,14 +64,15 @@ Shared interactive prompts live in **`keyring/edit-encrypted-common.bash`**
 If encrypt/validate fails after the live file was moved to backup, stderr
 prints a suggested **`mv -f …`** recovery line (**`%q`**-escaped paths).
 
-## sops-specific (`edit-encrypted-config.sh`)
+## sops-specific (`new-encrypted-config.sh` / `edit-encrypted-config.sh`)
 
 - **`SOPS_CONFIG`:** **`--sops-config` / `-c`**, else **`$SECCONFIG_DIR/.sops.yaml`**
   when present.
 - **Staging:** Cleartext is edited under **`/dev/shm`**, then copied to a
-  **temporary plaintext path under `dirname(final output)`** so
-  **`creation_rules`** **`path_regex`** matches; ciphertext is not built
-  straight from **`/dev/shm`**.
+  **temporary plaintext path under `dirname(final output)`** named
+  **`<stem>.plain.XXXXXX.yaml`** (stem from the ciphertext basename) so
+  **`creation_rules`** **`path_regex`** can match **`.*\.plain\.ya?ml`** (or
+  similar); ciphertext is not built straight from **`/dev/shm`**.
 - **Prereqs:** **`sops`**, **`with-sops-dek.sh`**, **`get-dek.sh`**; **`GET_DEK_PATH`**
   or **`-k`**.
 
@@ -79,7 +88,8 @@ Refuses **`xtrace`** / **`verbose`** (via **`keyring/lib.bash`**).
 
 **`keyring/with-sops-dek.sh`** remains the single place that attaches the age
 DEK to **`sops`**. **`load_config()`** and **`decrypt-config.sh`** use that
-wrapper; **`edit-encrypted-config.sh`** composes it for encrypt/decrypt/validate.
+wrapper; **`new-encrypted-config.sh`** / **`edit-encrypted-config.sh`** compose
+it for encrypt/decrypt/validate (via **`.work-encrypted-config.bash`**).
 
 ## Non-goals (for this document)
 
@@ -90,4 +100,5 @@ wrapper; **`edit-encrypted-config.sh`** composes it for encrypt/decrypt/validate
 
 - **`secconfig/README.md`** — **`SECCONFIG_DIR`**, **`scripts/`**.
 - **`keyring/README.md`**, **`keyring/with-sops-dek.sh`**, **`keyring/edit-encrypted.sh`**,
-  **`keyring/edit-encrypted-common.bash`**, **`secconfig/scripts/edit-encrypted-config.sh`**.
+  **`keyring/edit-encrypted-common.bash`**, **`secconfig/scripts/.work-encrypted-config.bash`**,
+  **`secconfig/scripts/new-encrypted-config.sh`**, **`secconfig/scripts/edit-encrypted-config.sh`**.

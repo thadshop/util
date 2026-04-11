@@ -192,6 +192,8 @@ _keyring_dek_decrypt_fail() {
 keyring_init() {
     # Prompt for passphrase (no echo), hash with SHA256, store in
     # persistent keyring.
+    # If dek.encrypted exists: one prompt; correctness checked by decrypt.
+    # If no DEK yet (new passphrase): two prompts and they must match.
     # Idempotent: if KEK already exists, does nothing.
     # Returns 0 on success, 1 on failure.
     if ! keyring_check_keyring; then
@@ -211,31 +213,48 @@ keyring_init() {
         return 1
     fi
 
-    local prompt_msg="Enter keyring passphrase (stored in kernel "
-    prompt_msg+="keyring for this user until logout/reboot): "
-    local confirm_msg="Confirm passphrase: "
     local passphrase
     local passphrase_confirm
     local hash
     local keyring_id
+    local dek_file="${_KEYRING_DIR}/dek.encrypted"
+    local prompt_msg
+    local confirm_msg="Confirm passphrase: "
 
-    if ! read -r -s -p "${prompt_msg}" passphrase; then
+    if [[ -f "${dek_file}" ]]; then
+        prompt_msg="Enter keyring passphrase (verified against DEK, "
+        prompt_msg+="stored in kernel keyring for this session): "
+        if ! read -r -s -p "${prompt_msg}" passphrase; then
+            printf '%s\n' '' >&2
+            printf '%s\n' 'keyring: failed to read passphrase' >&2
+            passphrase=''
+            passphrase_confirm=''
+            return 1
+        fi
         printf '%s\n' '' >&2
-        printf '%s\n' 'keyring: failed to read passphrase' >&2
-        passphrase=''
         passphrase_confirm=''
-        return 1
-    fi
-    printf '%s\n' '' >&2
+    else
+        prompt_msg="Enter keyring passphrase (stored in kernel "
+        prompt_msg+="keyring for this user until logout/reboot): "
+        if ! read -r -s -p "${prompt_msg}" passphrase; then
+            printf '%s\n' '' >&2
+            printf '%s\n' 'keyring: failed to read passphrase' >&2
+            passphrase=''
+            passphrase_confirm=''
+            return 1
+        fi
+        printf '%s\n' '' >&2
 
-    if ! read -r -s -p "${confirm_msg}" passphrase_confirm; then
+        if ! read -r -s -p "${confirm_msg}" passphrase_confirm; then
+            printf '%s\n' '' >&2
+            printf '%s\n' \
+              'keyring: failed to read passphrase confirmation' >&2
+            passphrase=''
+            passphrase_confirm=''
+            return 1
+        fi
         printf '%s\n' '' >&2
-        printf '%s\n' 'keyring: failed to read passphrase confirmation' >&2
-        passphrase=''
-        passphrase_confirm=''
-        return 1
     fi
-    printf '%s\n' '' >&2
 
     # Clear passphrase on exit (error, signal, or normal)
     trap 's=${?}; passphrase=""; passphrase_confirm=""; exit ${s}' EXIT
@@ -248,12 +267,14 @@ keyring_init() {
         return 1
     fi
 
-    if [[ "${passphrase}" != "${passphrase_confirm}" ]]; then
-        printf '%s\n' 'keyring: passphrases do not match' >&2
-        passphrase=''
-        passphrase_confirm=''
-        trap - EXIT
-        return 1
+    if [[ ! -f "${dek_file}" ]]; then
+        if [[ "${passphrase}" != "${passphrase_confirm}" ]]; then
+            printf '%s\n' 'keyring: passphrases do not match' >&2
+            passphrase=''
+            passphrase_confirm=''
+            trap - EXIT
+            return 1
+        fi
     fi
 
     if ! hash=$(printf '%s' "${passphrase}" | sha256sum 2>/dev/null | \
@@ -266,7 +287,6 @@ keyring_init() {
     fi
 
     # When DEK exists, verify passphrase can decrypt it before storing KEK
-    local dek_file="${_KEYRING_DIR}/dek.encrypted"
     local test_enc="${_KEYRING_DIR}/keyring-test.enc"
     local key_file decrypted
     local dek_file_abs

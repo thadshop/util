@@ -2,7 +2,6 @@
 FastAPI application: POST /v1/token (Mode A static; Mode B client credentials).
 """
 
-import json
 import logging
 from typing import Any, Optional, Union
 
@@ -25,7 +24,7 @@ from tokmint.profile_load import (
     load_profile,
     require_resolved_seconfig_dir,
 )
-from tokmint.settings import get_seconfig_subdir
+from tokmint.settings import get_secconfig_subdir
 from tokmint.validators import is_safe_config_segment
 
 logger = logging.getLogger(__name__)
@@ -141,15 +140,11 @@ async def tokmint_error_handler(
     request: Request,
     exc: TokmintError,
 ) -> JSONResponse:
-    line = json.dumps(
-        _tokmint_error_log_event(request, exc),
-        ensure_ascii=True,
-        separators=(",", ":"),
-    )
+    event = _tokmint_error_log_event(request, exc)
     if exc.status_code >= 500:
-        logger.error("%s", line)
+        logger.error("", extra=event)
     else:
-        logger.warning("%s", line)
+        logger.warning("", extra=event)
     return error_json_response(exc.status_code, exc.code, exc.detail)
 
 
@@ -212,9 +207,16 @@ async def mint_token(
     client_id: Optional[str] = Query(None),
     key_id: Optional[str] = Query(None),
     dpop_key_id: Optional[str] = Query(None),
+    dpop_htm: Optional[str] = Query(None),
+    dpop_htu: Optional[str] = Query(None),
 ) -> dict[str, Union[str, int]]:
     """
     Mode A: static token. Mode B: OAuth client_credentials.
+
+    dpop_htm / dpop_htu: when provided and the upstream token_type is DPoP,
+    a fresh DPoP proof for the caller's actual API request is built and
+    returned as ``dpop_proof`` in the response body.  The Postman pre-request
+    script passes these automatically.
     """
     require_resolved_seconfig_dir()
 
@@ -233,7 +235,7 @@ async def mint_token(
             "ASCII letters, digits, underscore, and hyphen only.",
         )
 
-    subdir = get_seconfig_subdir()
+    subdir = get_secconfig_subdir()
     if not is_safe_config_segment(subdir):
         raise TokmintError(
             500,
@@ -317,9 +319,9 @@ async def mint_token(
         )
 
         seconfig_base = require_resolved_seconfig_dir()
-        assertion_jwt: Optional[str] = None
+        assertion_factory: Optional[object] = None
         secret_str: Optional[str] = None
-        dpop_proof: Optional[str] = None
+        dpop_priv = None
 
         if method == "private_key_jwt":
             if kid is None:
@@ -358,14 +360,30 @@ async def mint_token(
             ttl_i = ttl if isinstance(ttl, int) else 300
             priv = load_private_key_from_signing_key_row(sk_row, seconfig_base)
             jwt_hdr = sk_row.get("jwt_header")
-            assertion_jwt = build_client_assertion_jwt(
-                issuer=iss.strip(),
-                subject=sub_s,
-                audience=audience,
-                private_key=priv,
-                ttl_seconds=ttl_i,
-                profile_jwt_headers=jwt_hdr,
-            )
+            _iss = iss.strip()
+            _sub = sub_s
+            _aud = audience
+            _priv = priv
+            _ttl = ttl_i
+            _hdr = jwt_hdr
+
+            def assertion_factory(
+                _i=_iss,
+                _s=_sub,
+                _a=_aud,
+                _p=_priv,
+                _t=_ttl,
+                _h=_hdr,
+            ) -> str:
+                return build_client_assertion_jwt(
+                    issuer=_i,
+                    subject=_s,
+                    audience=_a,
+                    private_key=_p,
+                    ttl_seconds=_t,
+                    profile_jwt_headers=_h,
+                )
+
             sec_for_upstream: Optional[str] = None
         else:
             if kid is not None:
@@ -391,11 +409,6 @@ async def mint_token(
                 sk_dpop,
                 seconfig_base,
             )
-            dpop_proof = build_dpop_proof_jwt(
-                private_key=dpop_priv,
-                http_method="POST",
-                http_url=token_url,
-            )
 
         upstream_authn = _upstream_client_authn(method)
         result = await fetch_client_credentials_token(
@@ -406,8 +419,8 @@ async def mint_token(
             auth_server.get("request_headers"),
             upstream_authn,
             extra_map,
-            client_assertion_jwt=assertion_jwt,
-            dpop_proof_jwt=dpop_proof,
+            client_assertion_factory=assertion_factory,
+            dpop_private_key=dpop_priv,
         )
 
         out: dict[str, Union[str, int]] = {
@@ -416,6 +429,36 @@ async def mint_token(
         }
         if "expires_in" in result:
             out["expires_in"] = int(result["expires_in"])
+
+        # When the caller supplied dpop_htm/dpop_htu and the upstream issued
+        # a DPoP-bound token, build a proof for their actual API request so
+        # Postman can attach it as the DPoP header without extra round-trips.
+        api_htm = _query_value(dpop_htm)
+        api_htu = _query_value(dpop_htu)
+        if (
+            dpop_priv is not None
+            and str(out["token_type"]).lower() == "dpop"
+            and api_htm is not None
+            and api_htu is not None
+        ):
+            out["dpop_proof"] = build_dpop_proof_jwt(
+                private_key=dpop_priv,
+                http_method=api_htm,
+                http_url=api_htu,
+                access_token=str(out["access_token"]),
+            )
+
+        log_extra: dict = {
+            "event": "token_minted",
+            "mode": "B",
+            "profile": prof,
+            "domain": canon_req,
+            "token_type": out["token_type"],
+            "dpop_proof_included": "dpop_proof" in out,
+        }
+        if "expires_in" in out:
+            log_extra["expires_in"] = out["expires_in"]
+        logger.info("", extra=log_extra)
         return out
 
     # Mode A
@@ -441,6 +484,13 @@ async def mint_token(
 
     pdata = load_profile(prof, subdir)
     auth_scheme, secret = find_static_token(pdata, canon_req, tid)
+    logger.info("", extra={
+        "event": "token_minted",
+        "mode": "A",
+        "profile": prof,
+        "domain": canon_req,
+        "token_type": auth_scheme,
+    })
     return {
         "access_token": secret,
         "token_type": auth_scheme,

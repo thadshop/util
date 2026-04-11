@@ -5,10 +5,10 @@ Load private keys (PEM file or JWK dict) and choose JWT signing algorithms.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Union
 
-import jwt
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric.ec import (
     EllipticCurvePrivateKey,
@@ -20,6 +20,8 @@ from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 from tokmint.errors import TokmintError
 
 PrivateKeyTypes = Union[EllipticCurvePrivateKey, RSAPrivateKey]
+
+logger = logging.getLogger(__name__)
 
 
 def load_private_key_from_jwk(jwk: Any) -> PrivateKeyTypes:
@@ -153,17 +155,21 @@ def algorithm_for_key(key: PrivateKeyTypes) -> str:
     if isinstance(key, EllipticCurvePrivateKey):
         name = key.curve.name
         if name == "secp256r1":
-            return "ES256"
-        if name == "secp384r1":
-            return "ES384"
-        if name == "secp521r1":
-            return "ES512"
-        raise TokmintError(
-            400,
-            "PROFILE_INVALID",
-            "Unsupported elliptic curve for JWT signing.",
-        )
+            alg = "ES256"
+        elif name == "secp384r1":
+            alg = "ES384"
+        elif name == "secp521r1":
+            alg = "ES512"
+        else:
+            raise TokmintError(
+                400,
+                "PROFILE_INVALID",
+                "Unsupported elliptic curve for JWT signing.",
+            )
+        logger.debug("", extra={"event": "key_algorithm", "alg": alg})
+        return alg
     if isinstance(key, RSAPrivateKey):
+        logger.debug("", extra={"event": "key_algorithm", "alg": "RS256"})
         return "RS256"
     raise TokmintError(
         500,

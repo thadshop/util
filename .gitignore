@@ -1,6 +1,9 @@
 # Local scratch (repo root)
 /.tmp/
 
+# Claude Code local settings
+/.claude/
+
 # Python
 __pycache__/
 *.py[cod]

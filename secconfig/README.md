@@ -96,7 +96,8 @@ files there.
 | `examples/example-SECCONFIG_DIR.sops.yaml` | Template for `$SECCONFIG_DIR/.sops.yaml` (e.g. `encrypted_suffix: '_secrypt'`) |
 | `scripts/encrypt-config.sh` | Encrypt plain `*.yaml`: **`-i`** path (or **`-`** stdin) → `*.enc.yaml` |
 | `scripts/decrypt-config.sh` | Decrypt: **`-i`** path (or **`-`** stdin); uses `../keyring/with-sops-dek.sh` |
-| `scripts/edit-encrypted-config.sh` | Interactive **new** / **edit** with sops (cleartext in **`/dev/shm`**); see **`../keyring/EDIT_ENCRYPT_WORKFLOW.md`** |
+| `scripts/new-encrypted-config.sh` | Interactive **new** file with sops (cleartext in **`/dev/shm`**); see **`../keyring/EDIT_ENCRYPT_WORKFLOW.md`** |
+| `scripts/edit-encrypted-config.sh` | Interactive **edit** of an existing `*.enc.yaml` with sops; shared impl with **new-** script |
 
 Keyring init fixtures live under `../keyring/` (`keyring-test.txt` /
 `keyring-test.enc`); see [keyring/README.md](../keyring/README.md).
@@ -172,13 +173,15 @@ sops -e --output example-config.enc.yaml example-config.yaml
 here). Use `--output` only to choose where the ciphertext is written; it does
 not change which creation rule applies.
 
-### Interactive edit (`scripts/edit-encrypted-config.sh`)
+### Interactive edit (`scripts/new-encrypted-config.sh`, `edit-encrypted-config.sh`)
 
-For changing secrets in place without leaving cleartext on normal disk, use
-`edit-encrypted-config.sh new` or `… edit path/to/file.enc.yaml`. It sources
-`keyring/edit-encrypted-common.bash`, uses `keyring/with-sops-dek.sh`, and stages
-plaintext under `dirname(output)` for `path_regex`. See
-**`../keyring/EDIT_ENCRYPT_WORKFLOW.md`**.
+For workflows that keep cleartext only under **`/dev/shm`**, use
+**`new-encrypted-config.sh`** (empty plaintext → choose output path → encrypt) or
+**`edit-encrypted-config.sh path/to/file.enc.yaml`** (decrypt → edit →
+re-encrypt). Shared logic lives in **`scripts/.work-encrypted-config.bash`**
+(sourced only). Both use **`keyring/with-sops-dek.sh`** and stage plaintext under
+**`dirname(output)`** as **`<stem>.plain.XXXXXX.yaml`** so **`path_regex`** can
+match that staging name. See **`../keyring/EDIT_ENCRYPT_WORKFLOW.md`**.
 
 ### Helper script (`scripts/encrypt-config.sh`)
 

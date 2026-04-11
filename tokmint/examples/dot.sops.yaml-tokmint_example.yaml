@@ -4,25 +4,44 @@
 # sops uses the FIRST creation_rules entry whose path_regex matches the path
 # of the file you pass to  sops -e  (the plaintext INPUT), not --output.
 # That path is relative to the DIRECTORY of .sops.yaml (sops strips that
-# prefix).  E.g. with .sops.yaml in .../seccconfig/, a staging file becomes
-#   tokmint/.edit-staging-plain.XXXXXX.yaml   — not  .../tokmint/...
-# Use (^|.*/)tokmint/... so both shapes match if you move .sops.yaml later.
-# Put this block BEFORE any broad catch-all (e.g. .*\.yaml$) in your file.
+# prefix).  Scripts stage plaintext as:
+#   tokmint/<stem>.plain.XXXXXX.yaml
+# where <stem> is the ciphertext basename without .enc.yaml (e.g. tecrypt for
+# tecrypt.enc.yaml). Use (^|/)tokmint/... in path_regex (relative path uses /).
+#
+# encrypted_suffix: '_secrypt' encrypts only keys whose NAMES end with that
+# literal suffix — not fields named credential / client_secret / jwk. For
+# tokmint profiles use encrypted_regex (below) for staging and *.enc.yaml.
 #
 # Public age key: e.g.  path/to/util/keyring/get-age-public-key.sh
 #
 # This rule covers:
 #   - Named plaintext inputs:  tokmint/<profile>.plain.yaml
-#   - edit-encrypted-config.sh  temp plaintext under tokmint/
+#   - new-encrypted-config.sh / edit-encrypted-config.sh — staging
+#     tokmint/<stem>.plain.XXXXXX.yaml
 # Ciphertext on disk for tokmint:  tokmint/<profile>.enc.yaml
 #
-# Only key NAMES credential and client_secret are encrypted (any depth).
-# Add more alternates inside encrypted_regex if you introduce other secret
-# leaf keys (e.g. a dedicated suffix pattern). Do NOT use a bare  value  key:
-# it would match every  value:  in the file (e.g. oauth headers).
+# encrypted_regex lists KEY NAMES whose VALUES sops encrypts; any other key
+# in the file stays plaintext. Here: credential, client_secret, jwk (and
+# names ending in _secret). Typical sops encrypts the whole
+# signing_keys[].jwk map as one
+# unit — verify with sops -e / sops -d on a sample.
+# Non-secret JWK details (kty, crv, kid, …) are only visible after decrypt;
+# optional YAML comments above jwk: can hold operator hints (keep in sync).
+#
+# Do NOT use a bare  value  key: it would match every  value:  (e.g. under
+# auth_servers request_headers).
+#
+# Paths in encrypted_pem_path are not secret; encrypt the PEM file it points
+# to separately.
 
 creation_rules:
-  - path_regex: >-
-      (^|.*/)tokmint/(\.edit-staging-plain\..*\.ya?ml|.*\.plain\.ya?ml)$
-    encrypted_regex: ^(credential|client_secret)$
+  - path_regex: (^|/)tokmint/.*\.plain\.ya?ml$
+    encrypted_regex: credential|client_secret|jwk|.*_secret
+    age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
+  - path_regex: (^|/)tokmint/.*\.enc\.ya?ml$
+    encrypted_regex: credential|client_secret|jwk|.*_secret
+    age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY
+  - path_regex: .*\.ya?ml$
+    encrypted_regex: credential|client_secret|jwk|.*_secret
     age: age1REPLACE_WITH_YOUR_AGE_PUBLIC_KEY

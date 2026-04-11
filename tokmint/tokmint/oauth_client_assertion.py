@@ -4,6 +4,7 @@ OAuth 2.0 client authentication JWT (private_key_jwt), RFC 7523.
 
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from typing import Any, Dict
@@ -16,6 +17,8 @@ from tokmint.jwt_sign import (
     algorithm_for_key,
     merge_jose_headers,
 )
+
+logger = logging.getLogger(__name__)
 
 CLIENT_ASSERTION_TYPE = (
     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
@@ -53,6 +56,15 @@ def build_client_assertion_jwt(
         "jti": jti,
     }
     alg = algorithm_for_key(private_key)
+    logger.debug("", extra={
+        "event": "client_assertion_jwt",
+        "iss": claims["iss"],
+        "sub": claims["sub"],
+        "aud": claims["aud"],
+        "exp": claims["exp"],
+        "jti": claims["jti"],
+        "alg": alg,
+    })
     jose_base: Dict[str, Any] = {"alg": alg}
     headers = merge_jose_headers(jose_base, profile_jwt_headers)
     try:

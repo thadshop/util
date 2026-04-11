@@ -2,7 +2,8 @@
 # Executable: run this file; do not `source` it.
 #
 # Interactive workflow: cleartext only in /dev/shm; encrypt with encrypt.sh
-# (OpenSSL + KEK). For sops/secconfig, use secconfig/scripts/edit-encrypted-config.sh.
+# (OpenSSL + KEK). For sops/secconfig, use secconfig/scripts/new-encrypted-config.sh
+# or edit-encrypted-config.sh.
 # Use: edit-encrypted.sh [options] new | edit ENCRYPTED_FILE
 #
 # Shared prompts: edit-encrypted-common.bash
