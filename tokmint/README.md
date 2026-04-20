@@ -96,7 +96,9 @@ curl -s -X POST \
 ```
 
 See **`examples/tokmint.example.profile.yaml`** for the full profile structure
-covering all client authentication methods.
+covering all client authentication methods. Copy-paste-ready scripts for each
+authentication method are in **`examples/curl.example.*.sh`**; Postman
+pre-request scripts are in **`examples/postman-prerequest.example.*.js`**.
 
 ## SOPS-encrypted profile (manual test)
 

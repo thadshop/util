@@ -59,7 +59,7 @@ python -m pytest tests/ -q
 
 ```bash
 # Initialize (one-time per machine — prompts for passphrase)
-bash keyring/init.bash
+source keyring/init.bash
 
 # Refresh keyring expiry (suitable for crontab)
 bash keyring/refresh-expiry.sh
@@ -75,14 +75,28 @@ bash keyring/edit-encrypted.sh <file.enc>
 
 ### Security model
 
-- **No cleartext secrets on disk** — DEK stored as `keyring/dek.encrypted` (age key encrypted with KEK)
-- **KEK lives only in the kernel keyring** — survives session but not reboot; initialized from passphrase hash
-- **Cleartext only under `/dev/shm`** (tmpfs) — all edit workflows write cleartext here temporarily
-- **Python never sees the DEK** — `keyring/with-sops-dek.sh` sets `SOPS_AGE_KEY_FILE` to a tmpfs path and runs the command as a subprocess; secconfig calls this script rather than reading the key directly
+- **No cleartext secrets on disk** — The DEK is an **age** private key. It is
+  stored wrapped at `~/.local/share/util/keyring/dek.encrypted` as a **16-byte
+  util header** (magic `UTILDEK1`, format version, recipe id, payload length)
+  plus **`openssl enc`** ciphertext (parameters defined by committed **recipe**
+  files under `keyring/dek-wrap-recipes/`, e.g. `dek-wrap-recipe-01.conf`).
+  Passphrase material for `openssl -pass file:` is the KEK (SHA-256 hex of the
+  user passphrase). **`dek.encrypted.meta`** beside it records recipe/OpenSSL
+  metadata. Override data dir with `KEYRING_DATA_DIR`. **User files** use the
+  same **age** DEK via **`encrypt.sh`** / **`decrypt.sh`** or **sops**.
+- **KEK lives only in the kernel keyring** — survives session but not reboot;
+  initialized from passphrase hash
+- **Cleartext only under `/dev/shm`** (tmpfs) — all edit workflows write
+  cleartext here temporarily
+- **Python never sees the DEK** — `keyring/with-sops-dek.sh` sets
+  `SOPS_AGE_KEY_FILE` to a tmpfs path and runs the command as a subprocess;
+  secconfig calls this script rather than reading the key directly
 
 ### Data flow
 
-1. `keyring/init.bash` — prompts passphrase → hashes → stores KEK in kernel keyring; encrypts DEK with KEK
+1. `keyring/init.bash` — prompts passphrase → hashes → stores KEK in kernel
+   keyring; verifies (or establishes) **`dek.encrypted`** via **openssl enc**
+   (recipe-driven) wrap of the age DEK
 2. `secconfig.load_config(path)` — shells out to `keyring/with-sops-dek.sh sops --decrypt ...` → returns Python dict
 3. `tokmint` — receives `POST /v1/token?profile=<name>`, loads `$SECCONFIG_DIR/tokmint/<name>.enc.yaml` via secconfig, returns token
 
@@ -102,10 +116,14 @@ Profile YAML schema is validated against `tokmint/schemas/profile.schema.json` (
 
 | Variable | Component | Purpose |
 |---|---|---|
+| `KEYRING_DATA_DIR` | keyring | Dir for `dek.encrypted`, `dek.encrypted.meta`, and `keyring-test.enc` (default: `~/.local/share/util/keyring`) |
+| `KEYRING_OPENSSL_BIN` | keyring | Path to **`openssl`** for DEK wrap (default: `/usr/bin/openssl`) |
+| `KEYRING_DEK_WRAP_RECIPE_DIR` | keyring | Directory of `dek-wrap-recipe-NN.conf` files (default: `keyring/dek-wrap-recipes` in the repo) |
 | `SECCONFIG_DIR` | secconfig, tokmint | Root dir for encrypted configs and `.sops.yaml` |
 | `TOKMINT_SECCONFIG_SUBDIR` | tokmint | Subdir under `SECCONFIG_DIR` for profiles (default: `tokmint`) |
 | `TOKMINT_PORT` | tokmint | uvicorn port (default: 9876) |
 | `TOKMINT_LOG_LEVEL` | tokmint | Log verbosity: `DEBUG`, `VERBOSE`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` (default: `INFO`) |
+| `TOKMINT_UNSAFE_LOGGING` | tokmint | Set to `true` (case-insensitive) to log redacted fields verbatim at `VERBOSE`; emits extra WARNING lines |
 | `TOKMINT_JSONL_FMT_FLUSH_MS` | jsonl-fmt | Burst flush timeout in ms for `-a` mode (default: 1000) |
 | `SOPS_AGE_KEY_FILE` | set by `with-sops-dek.sh` | Temp path to cleartext DEK under `/dev/shm` |
 

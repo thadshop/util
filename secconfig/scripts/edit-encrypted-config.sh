@@ -17,7 +17,7 @@ set -e
 _script_path="$(realpath "${BASH_SOURCE[0]}")"
 _script_dir="$(dirname "${_script_path}")"
 
-export EEC_MSG_PREFIX="edit-encrypted-config"
+export WE_MSG_PREFIX="edit-encrypted-config"
 # shellcheck source=.work-encrypted-config.bash
 source "${_script_dir}/.work-encrypted-config.bash"
 

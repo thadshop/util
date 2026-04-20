@@ -16,11 +16,13 @@ Callers log structured data via ``extra``::
     logger.info("", extra={"event": "token_minted", "profile": "okta"})
 
 The ``event`` key (or the formatted message when ``event`` is absent) is
-always present in the output.  Secrets must never appear in ``extra``.
+always present in the output.  Secrets must not appear in ``extra`` unless
+``TOKMINT_UNSAFE_LOGGING`` is ``true`` case-insensitively (see
+``get_unsafe_logging``).
 
 Log levels (most to least verbose):
     DEBUG   (10) — JWT internals, key algorithm selection, DPoP proof fields
-    VERBOSE (15) — HTTP request/response headers and bodies (secrets redacted)
+    VERBOSE (15) — HTTP request/response detail (redacted unless unsafe)
     INFO    (20) — Normal operation events (startup, token_minted, errors)
 """
 
@@ -35,30 +37,32 @@ logging.addLevelName(VERBOSE, "VERBOSE")
 
 # LogRecord attributes that are part of stdlib's internal bookkeeping.
 # These are filtered out so they don't appear as extra JSON fields.
-_STDLIB_ATTRS: frozenset[str] = frozenset({
-    "args",
-    "created",
-    "exc_info",
-    "exc_text",
-    "filename",
-    "funcName",
-    "levelname",
-    "levelno",
-    "lineno",
-    "message",
-    "module",
-    "msecs",
-    "msg",
-    "name",
-    "pathname",
-    "process",
-    "processName",
-    "relativeCreated",
-    "stack_info",
-    "taskName",
-    "thread",
-    "threadName",
-})
+_STDLIB_ATTRS: frozenset[str] = frozenset(
+    {
+        "args",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "message",
+        "module",
+        "msecs",
+        "msg",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "taskName",
+        "thread",
+        "threadName",
+    }
+)
 
 
 class JsonFormatter(logging.Formatter):

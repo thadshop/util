@@ -3,12 +3,25 @@
 #
 # Rotate the KEK and re-encrypt the DEK with the new KEK.
 # If DEK does not exist, creates it (generates new age key).
-# Requires: age-keygen, openssl, keyutils.
+# Requires: interactive terminal, openssl (pinned via KEYRING_OPENSSL_BIN),
+# age-keygen, age, sops, keyutils, DEK wrap recipes.
+
+if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
+    printf '%s\n' \
+      'keyring: rotate-kek.sh requires an interactive terminal' \
+      ' (stdin and stdout).' >&2
+    exit 1
+fi
 
 _script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-_dek_file="${_script_dir}/dek.encrypted"
 # shellcheck source=lib.bash
 source "${_script_dir}/lib.bash"
+_dek_file="${_KEYRING_DATA_DIR}/dek.encrypted"
+
+if ! keyring_check_prereqs; then
+    exit 1
+fi
+export KEYRING_INTERNAL_SKIP_DEK_SMOKE=1
 
 # Rotate KEK
 _keyring_rotate_kek() {
@@ -16,6 +29,11 @@ _keyring_rotate_kek() {
         return 1
     fi
     if ! keyring_check_keyring; then
+        return 1
+    fi
+    if ! mkdir -p "${_KEYRING_DATA_DIR}"; then
+        printf '%s\n' \
+          "keyring: failed to create data dir: ${_KEYRING_DATA_DIR}" >&2
         return 1
     fi
 
@@ -146,7 +164,7 @@ _keyring_rotate_kek() {
     else
         local test_plain test_enc key_file public_key sops_err
         test_plain="${_script_dir}/keyring-test.txt"
-        test_enc="${_script_dir}/keyring-test.enc"
+        test_enc="${_KEYRING_DATA_DIR}/keyring-test.enc"
         key_file="/dev/shm/keyring-test-key-$$"
         trap 'rm -f "${key_file}" 2>/dev/null' RETURN
         printf '%s' "${dek}" > "${key_file}"
@@ -161,10 +179,9 @@ _keyring_rotate_kek() {
               "keyring: could not create keyring-test.enc (${test_plain} missing)" \
               >&2
         else
-            sops_err=$(cd "${_script_dir}" && \
-              sops -e --input-type binary --output-type binary \
-              --age "${public_key}" --output keyring-test.enc \
-              keyring-test.txt 2>&1)
+            sops_err=$(sops -e --input-type binary --output-type binary \
+              --age "${public_key}" --output "${test_enc}" \
+              "${test_plain}" 2>&1)
             if [[ ${?} -eq 0 ]]; then
                 printf '%s\n' 'keyring: created keyring-test.enc' >&2
             else
@@ -184,3 +201,6 @@ _keyring_rotate_kek() {
 }
 
 _keyring_rotate_kek
+_rc=${?}
+unset KEYRING_INTERNAL_SKIP_DEK_SMOKE
+exit "${_rc}"

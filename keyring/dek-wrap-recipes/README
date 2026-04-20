@@ -1,0 +1,17 @@
+DEK wrap recipes (OpenSSL)
+===========================
+
+Each file ``dek-wrap-recipe-NN.conf`` (NN = 01–99) defines how ``dek.encrypted``
+is produced: cipher, PBKDF2 iteration count, minimum OpenSSL version, and
+header layout. Fixed inputs for openssl self-tests live in
+``../dek-wrap-test-vectors.bash``. The numeric id is stored in the 16-byte util
+header on ``dek.encrypted`` (bytes 10–11, uint16 big-endian).
+
+Override the directory with ``KEYRING_DEK_WRAP_RECIPE_DIR`` (default: this
+directory next to ``lib.bash``).
+
+Recipe 01 is the only recipe today; future ids can add new parameter sets while
+old ciphertext remains readable via the embedded recipe id.
+
+OpenSSL binary path is pinned with ``KEYRING_OPENSSL_BIN`` (default:
+``/usr/bin/openssl``).

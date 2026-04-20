@@ -7,7 +7,7 @@ import logging
 import uvicorn
 
 from tokmint.logging_config import configure_logging
-from tokmint.settings import get_settings_summary
+from tokmint.settings import get_settings_summary, get_unsafe_logging
 
 
 def main() -> None:
@@ -19,9 +19,28 @@ def main() -> None:
     logger = logging.getLogger("tokmint")
     logger.info("", extra={"event": "startup", **settings})
 
-    _UVICORN_LEVELS = frozenset({
-        "critical", "error", "warning", "info", "debug", "trace",
-    })
+    if get_unsafe_logging():
+        logger.warning(
+            "",
+            extra={
+                "event": "unsafe_logging_enabled",
+                "notice": (
+                    "TOKMINT_UNSAFE_LOGGING=true; log output may contain "
+                    "secrets and replayable credentials."
+                ),
+            },
+        )
+
+    _UVICORN_LEVELS = frozenset(
+        {
+            "critical",
+            "error",
+            "warning",
+            "info",
+            "debug",
+            "trace",
+        }
+    )
     uvicorn_level = log_level.lower()
     if uvicorn_level not in _UVICORN_LEVELS:
         uvicorn_level = "info"
