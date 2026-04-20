@@ -6,14 +6,14 @@
 # capture; use -o FILE for a path (e.g. /dev/shm/...).
 # Exit 1 on failure; errors to stderr.
 #
-# Requires: dek.encrypted to exist (create via rotate-kek.sh when no
-# DEK exists yet).
+# Requires: dek.encrypted (util header + openssl enc) to exist; create via
+# rotate-kek.sh when no DEK exists yet.
 
 _script_path="$(realpath "${BASH_SOURCE[0]}")"
 _script_dir="$(dirname "${_script_path}")"
-_dek_file="${_script_dir}/dek.encrypted"
 # shellcheck source=lib.bash
 source "${_script_dir}/lib.bash"
+_dek_file="${_KEYRING_DATA_DIR}/dek.encrypted"
 
 if ! keyring_no_debug; then
     printf '%s\n' "keyring: ${_script_path}: refused (debug mode enabled)" >&2

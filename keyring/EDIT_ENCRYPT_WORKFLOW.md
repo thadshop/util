@@ -26,18 +26,30 @@ artifact is always the **encrypted** file.
 
 | Script | Stack | When to use |
 |--------|--------|-------------|
-| **`keyring/edit-encrypted.sh`** | **`encrypt.sh`** / **`decrypt.sh`** (KEK + OpenSSL) | Standalone blobs, **not** sops. |
+| **`keyring/new-encrypted.sh`** | **`encrypt.sh`** / **`decrypt.sh`** (**age**, DEK recipient) | New standalone ciphertext, **not** sops. |
+| **`keyring/edit-encrypted.sh`** | same | Edit an existing **age** ciphertext **in place** (after backup prompts). |
 | **`secconfig/scripts/new-encrypted-config.sh`** | **sops** + **`with-sops-dek.sh`** | New ciphertext; **`SECCONFIG_DIR`**, **`.sops.yaml`**. |
 | **`secconfig/scripts/edit-encrypted-config.sh`** | same | Edit an existing encrypted file **in place** (after backup prompts). |
 
-Implementation: **`secconfig/scripts/.work-encrypted-config.bash`** (source
-only); entry scripts set **`EEC_MSG_PREFIX`** then call **`wek_new`** or
-**`wek_edit`**. With no file argument, **`edit-encrypted-config.sh`** lists
-ciphertexts under **`SECCONFIG_DIR`** when possible, otherwise prompts for a
-path (**`/dev/tty`** if available, else **stdin**; empty input aborts).
+**Keyring (age blobs):** **`keyring/.work-encrypted.bash`** (source only);
+**`new-encrypted.sh`** / **`edit-encrypted.sh`** set **`WE_MSG_PREFIX`** and
+call **`we_new`** or **`we_edit`**. With no file argument,
+**`edit-encrypted.sh`** lists ciphertexts under **`SECCONFIG_DIR`** when
+possible, otherwise prompts for a path (**`/dev/tty`** if available, else
+**stdin**; empty input aborts).
 
-Shared interactive prompts live in **`keyring/edit-encrypted-common.bash`**
-(source only). Callers set **`EEC_MSG_PREFIX`** before sourcing it.
+**Secconfig (sops):** **`secconfig/scripts/.work-encrypted-config.bash`**
+(source only); entry scripts set **`WE_MSG_PREFIX`** then call **`wek_new`**
+or **`wek_edit`**. Same **no-argument** listing / path behavior for
+**`edit-encrypted-config.sh`**.
+
+Shared interactive helpers (**`we_*`**: edit instructions, backup prompts,
+empty-file loop, **`/dev/shm`** check, etc.) live in **`keyring/lib.bash`**
+(both work scripts **`source`** **`lib.bash`** first). The simple
+“full path for new encrypted file” prompt is **`we_read_new_encrypted_path_and_mkdir`**
+(distinct from **`we_new_prompt_output_path_and_mkdir`** /
+**`wek_new_prompt_output_path_and_mkdir`**, which handle **`SECCONFIG_DIR`**
+directory picking).
 
 ## Use case 1 — New cleartext, first encryption
 
@@ -45,9 +57,9 @@ Shared interactive prompts live in **`keyring/edit-encrypted-common.bash`**
    its **full path**, and instructs the user to save and return.
 2. **Edit:** User edits and saves **outside** the workflow.
 3. **Continue:** User presses Enter; optional **empty-file** **`p` / `e` /
-   `a`** loop; user specifies the **new** encrypted path (**`new-encrypted-config.sh`**
-   with **`SECCONFIG_DIR`**: directory list with file hints, then basename, or
-   full path; may confirm **`mkdir`**).
+   `a`** loop; user specifies the **new** encrypted path (**`new-encrypted.sh`**
+   or **`new-encrypted-config.sh`** with **`SECCONFIG_DIR`**: directory list
+   with file hints, then basename, or full path; may confirm **`mkdir`**).
 4. **Finish:** Workflow encrypts, **validates**, **`mv`** into place, removes
    shm cleartext.
 
@@ -78,11 +90,14 @@ prints a suggested **`mv -f …`** recovery line (**`%q`**-escaped paths).
 
 Refuses **`xtrace`** / **`verbose`** (via **`keyring/lib.bash`**).
 
-## OpenSSL-specific (`edit-encrypted.sh`)
+## age-specific (`new-encrypted.sh` / `edit-encrypted.sh`)
 
-- **`get-kek.sh`** via **`GET_KEK_PATH`** or **`-k`**.
-- Plaintext can be encrypted **directly** from the shm file (no **`path_regex`**
-  staging).
+- **`get-dek.sh`** via **`GET_DEK_PATH`** or **`-k` / `--get-dek`** (same
+  semantics as secconfig scripts).
+- **`encrypt.sh`** resolves the age recipient via **`get-age-public-key.sh`**
+  (override with **`-k` / `--get-pub`** on **`encrypt.sh`** if needed).
+- Plaintext can be encrypted **directly** from the shm file (no sops
+  **`path_regex`** staging).
 
 ## Architecture
 
@@ -99,6 +114,8 @@ it for encrypt/decrypt/validate (via **`.work-encrypted-config.bash`**).
 ## Related
 
 - **`secconfig/README.md`** — **`SECCONFIG_DIR`**, **`scripts/`**.
-- **`keyring/README.md`**, **`keyring/with-sops-dek.sh`**, **`keyring/edit-encrypted.sh`**,
-  **`keyring/edit-encrypted-common.bash`**, **`secconfig/scripts/.work-encrypted-config.bash`**,
+- **`keyring/README.md`**, **`keyring/lib.bash`**, **`keyring/with-sops-dek.sh`**,
+  **`keyring/.work-encrypted.bash`**, **`keyring/new-encrypted.sh`**,
+  **`keyring/edit-encrypted.sh`**, **`keyring/encrypt.sh`**, **`keyring/decrypt.sh`**,
+  **`secconfig/scripts/.work-encrypted-config.bash`**,
   **`secconfig/scripts/new-encrypted-config.sh`**, **`secconfig/scripts/edit-encrypted-config.sh`**.

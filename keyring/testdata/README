@@ -1,0 +1,21 @@
+Golden DEK wrap sample
+======================
+
+`golden-dek-wrapped.bin` is a **util header** (16 bytes) plus an **openssl enc**
+payload produced with **recipe 01** parameters and the fixed smoke inputs from
+`../dek-wrap-test-vectors.bash` (`SMOKE_PASSPHRASE`, `SMOKE_PLAINTEXT`).
+
+The salt is embedded in the openssl blob, so this file is **fixed** for CI and
+regression checks. Regenerate when recipe crypto parameters **or** those test
+vectors change:
+
+```bash
+cd keyring/testdata
+bash ./regen-golden-dek-wrap.sh
+```
+
+Run the verifier (from anywhere):
+
+```bash
+bash keyring/testdata/verify-dek-wrap-golden.sh
+```

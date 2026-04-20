@@ -9,9 +9,16 @@ DEFAULT_SECCONFIG_SUBDIR = "tokmint"
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_JSONL_FMT_FLUSH_MS = 1000
 
-_VALID_LOG_LEVELS = frozenset({
-    "DEBUG", "VERBOSE", "INFO", "WARNING", "ERROR", "CRITICAL",
-})
+_VALID_LOG_LEVELS = frozenset(
+    {
+        "DEBUG",
+        "VERBOSE",
+        "INFO",
+        "WARNING",
+        "ERROR",
+        "CRITICAL",
+    }
+)
 
 
 def get_listen_port() -> int:
@@ -30,6 +37,18 @@ def get_secconfig_subdir() -> str:
         return raw
     else:
         return DEFAULT_SECCONFIG_SUBDIR
+
+
+def get_unsafe_logging() -> bool:
+    """
+    Whether VERBOSE logs may include redacted material verbatim.
+
+    Reads TOKMINT_UNSAFE_LOGGING.  Only the string ``true`` after strip,
+    compared case-insensitively, enables unsafe logging.  Any other value
+    (including empty) disables it.
+    """
+    raw = os.environ.get("TOKMINT_UNSAFE_LOGGING", "").strip().lower()
+    return raw == "true"
 
 
 def get_log_level() -> str:
@@ -70,5 +89,6 @@ def get_settings_summary() -> dict[str, object]:
         "port": get_listen_port(),
         "secconfig_subdir": get_secconfig_subdir(),
         "log_level": get_log_level(),
+        "unsafe_logging": get_unsafe_logging(),
         "secconfig_dir": os.environ.get("SECCONFIG_DIR", ""),
     }

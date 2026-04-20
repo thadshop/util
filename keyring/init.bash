@@ -15,7 +15,10 @@
 _keyring_init_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 if [[ -f "${_keyring_init_dir}/lib.bash" ]]; then
     # shellcheck source=lib.bash
-    source "${_keyring_init_dir}/lib.bash"
+    if ! source "${_keyring_init_dir}/lib.bash"; then
+        printf '%s\n' 'keyring: failed to load lib.bash (see errors above).' >&2
+        return 1 2>/dev/null || exit 1
+    fi
     if [[ -t 0 ]]; then
         if ! keyring_check_prereqs; then
             printf '%s\n' 'keyring: initialization failed. To retry, run:' >&2

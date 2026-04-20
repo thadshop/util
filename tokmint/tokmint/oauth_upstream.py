@@ -17,6 +17,7 @@ from tokmint.errors import TokmintError
 from tokmint.jwt_sign import PrivateKeyTypes
 from tokmint.logging_config import VERBOSE
 from tokmint.oauth_client_assertion import client_assertion_form_fields
+from tokmint.settings import get_unsafe_logging
 
 logger = logging.getLogger(__name__)
 
@@ -27,53 +28,60 @@ _SECRET_FORM_KEYS: frozenset[str] = frozenset({"client_secret"})
 _SECRET_HEADER_KEYS: frozenset[str] = frozenset({"authorization"})
 
 
-def _decode_jwt_for_log(token: str) -> Any:
+def _decode_jwt_for_log(token: str, *, unsafe: bool) -> Any:
     """
-    Decode a JWT's header and payload for logging; redact the signature.
+    Decode a JWT's header and payload for logging.
 
-    Only the signature carries secret material. The header and payload
-    are base64url-encoded JSON and safe to log. Returns a structured
-    dict on success, or _REDACTED on any parse failure.
+    When ``unsafe`` is false, the signature is replaced with _REDACTED.
+    When true, the raw third segment (base64url) is logged.  Returns a
+    structured dict on success, or _REDACTED on any parse failure.
     """
     parts = token.split(".")
     if len(parts) != 3:
         return _REDACTED
     try:
+
         def _b64_decode(s: str) -> Any:
             # urlsafe_b64decode requires padded input.
             padded = s + "=" * (-len(s) % 4)
             return json.loads(base64.urlsafe_b64decode(padded))
+
+        sig = parts[2] if unsafe else _REDACTED
         return {
             "header": _b64_decode(parts[0]),
             "payload": _b64_decode(parts[1]),
-            "signature": _REDACTED,
+            "signature": sig,
         }
     except Exception:
         return _REDACTED
 
 
-def _redact_form_fields(encoded_body: str) -> Dict[str, Any]:
+def _redact_form_fields(encoded_body: str, *, unsafe: bool) -> Dict[str, Any]:
     """
     Return decoded form fields for logging.
 
-    client_assertion is decoded (header+payload logged, signature
-    redacted). client_secret is fully redacted.
+    client_assertion is decoded; signature and client_secret follow
+    ``unsafe`` (see ``get_unsafe_logging``).
     """
     result: Dict[str, Any] = {}
     for k, v in parse_qsl(encoded_body, keep_blank_values=True):
         if k == "client_assertion":
-            result[k] = _decode_jwt_for_log(v)
+            result[k] = _decode_jwt_for_log(v, unsafe=unsafe)
         elif k in _SECRET_FORM_KEYS:
-            result[k] = _REDACTED
+            result[k] = v if unsafe else _REDACTED
         else:
             result[k] = v
     return result
 
 
-def _redact_request_headers(headers: Dict[str, str]) -> Dict[str, str]:
-    """Return headers with secret values replaced."""
+def _redact_request_headers(
+    headers: Dict[str, str],
+    *,
+    unsafe: bool,
+) -> Dict[str, str]:
+    """Return headers, redacting secret values unless ``unsafe``."""
     return {
-        k: (_REDACTED if k.lower() in _SECRET_HEADER_KEYS else v)
+        k: (v if unsafe or k.lower() not in _SECRET_HEADER_KEYS else _REDACTED)
         for k, v in headers.items()
     }
 
@@ -176,6 +184,8 @@ async def fetch_client_credentials_token(
     A single nonce-retry is performed automatically if the server requires
     one (RFC 9449 §8).
     """
+    unsafe = get_unsafe_logging()
+
     if client_authn not in ("body", "basic", "private_key_jwt"):
         raise TokmintError(
             500,
@@ -252,13 +262,16 @@ async def fetch_client_credentials_token(
     async def _run(client: httpx.AsyncClient) -> httpx.Response:
         hdrs, body = _build_attempt(None)
         if logger.isEnabledFor(VERBOSE):
-            logger.log(VERBOSE, "", extra={
+            _req_extras: Dict[str, Any] = {
                 "event": "upstream_request",
                 "url": token_url,
                 "method": "POST",
-                "request_headers": _redact_request_headers(hdrs),
-                "request_body": _redact_form_fields(body),
-            })
+                "request_headers": _redact_request_headers(hdrs, unsafe=unsafe),
+                "request_body": _redact_form_fields(body, unsafe=unsafe),
+            }
+            if unsafe:
+                _req_extras["request_body_raw"] = body
+            logger.log(VERBOSE, "", extra=_req_extras)
         response = await _post_once(client, token_url, hdrs, body)
 
         if (
@@ -269,21 +282,33 @@ async def fetch_client_credentials_token(
             server_nonce = response.headers.get("DPoP-Nonce")
             if server_nonce:
                 if logger.isEnabledFor(VERBOSE):
-                    logger.log(VERBOSE, "", extra={
-                        "event": "dpop_nonce_retry",
-                        "status": response.status_code,
-                        "response_headers": dict(response.headers),
-                    })
+                    logger.log(
+                        VERBOSE,
+                        "",
+                        extra={
+                            "event": "dpop_nonce_retry",
+                            "status": response.status_code,
+                            "response_headers": dict(response.headers),
+                        },
+                    )
                 hdrs, body = _build_attempt(server_nonce)
                 if logger.isEnabledFor(VERBOSE):
-                    logger.log(VERBOSE, "", extra={
+                    _req2: Dict[str, Any] = {
                         "event": "upstream_request",
                         "url": token_url,
                         "method": "POST",
                         "attempt": 2,
-                        "request_headers": _redact_request_headers(hdrs),
-                        "request_body": _redact_form_fields(body),
-                    })
+                        "request_headers": _redact_request_headers(
+                            hdrs,
+                            unsafe=unsafe,
+                        ),
+                        "request_body": _redact_form_fields(
+                            body, unsafe=unsafe
+                        ),
+                    }
+                    if unsafe:
+                        _req2["request_body_raw"] = body
+                    logger.log(VERBOSE, "", extra=_req2)
                 response = await _post_once(client, token_url, hdrs, body)
 
         return response
@@ -301,12 +326,16 @@ async def fetch_client_credentials_token(
 
     if response.status_code < 200 or response.status_code >= 300:
         if logger.isEnabledFor(VERBOSE):
-            logger.log(VERBOSE, "", extra={
-                "event": "upstream_error",
-                "status": response.status_code,
-                "response_headers": dict(response.headers),
-                "response_body": _upstream_error_fields(response),
-            })
+            logger.log(
+                VERBOSE,
+                "",
+                extra={
+                    "event": "upstream_error",
+                    "status": response.status_code,
+                    "response_headers": dict(response.headers),
+                    "response_body": _upstream_error_fields(response),
+                },
+            )
         raise TokmintError(
             502,
             "UPSTREAM_ERROR",
@@ -352,14 +381,19 @@ async def fetch_client_credentials_token(
     if isinstance(exp, (int, float)) and exp >= 0:
         out["expires_in"] = int(exp)
     if logger.isEnabledFor(VERBOSE):
-        logger.log(VERBOSE, "", extra={
-            "event": "upstream_response",
-            "status": response.status_code,
-            "response_headers": dict(response.headers),
-            "response_body": {
-                "token_type": out["token_type"],
-                "expires_in": out.get("expires_in"),
-                "access_token": _REDACTED,
+        _at = access if unsafe else _REDACTED
+        logger.log(
+            VERBOSE,
+            "",
+            extra={
+                "event": "upstream_response",
+                "status": response.status_code,
+                "response_headers": dict(response.headers),
+                "response_body": {
+                    "token_type": out["token_type"],
+                    "expires_in": out.get("expires_in"),
+                    "access_token": _at,
+                },
             },
-        })
+        )
     return out

@@ -17,13 +17,10 @@ _keyring_dir="$(cd "${_script_dir}/../../keyring" && pwd)"
 # shellcheck source=../../keyring/lib.bash
 source "${_keyring_dir}/lib.bash"
 
-if [[ -z "${EEC_MSG_PREFIX+x}" ]]; then
-    printf '%s\n' 'internal: set EEC_MSG_PREFIX before sourcing impl' >&2
+if [[ -z "${WE_MSG_PREFIX+x}" ]]; then
+    printf '%s\n' 'internal: set WE_MSG_PREFIX before sourcing impl' >&2
     exit 1
 fi
-
-# shellcheck source=../../keyring/edit-encrypted-common.bash
-source "${_keyring_dir}/edit-encrypted-common.bash"
 
 _with_sops_dek="${_keyring_dir}/with-sops-dek.sh"
 _default_get_dek="${_keyring_dir}/get-dek.sh"
@@ -108,7 +105,7 @@ cleanup_tmp_enc() {
 wek_parse_options() {
     local OPTS
     if ! OPTS=$(getopt -o k:c:h --long get-dek:,sops-config:,help \
-        -n "${EEC_MSG_PREFIX}" -- "${@}"); then
+        -n "${WE_MSG_PREFIX}" -- "${@}"); then
         return 1
     fi
     eval set -- "${OPTS}"
@@ -131,7 +128,7 @@ wek_parse_options() {
                 break
                 ;;
             *)
-                printf '%s\n' "${EEC_MSG_PREFIX}: invalid option: ${1}" >&2
+                printf '%s\n' "${WE_MSG_PREFIX}: invalid option: ${1}" >&2
                 return 1
                 ;;
         esac
@@ -141,19 +138,19 @@ wek_parse_options() {
 
 _require_prereqs() {
     if ! command -v sops >/dev/null 2>&1; then
-        printf '%s\n' "${EEC_MSG_PREFIX}: sops not in PATH" >&2
+        printf '%s\n' "${WE_MSG_PREFIX}: sops not in PATH" >&2
         return 1
     fi
-    eec_require_shm
+    we_require_shm
     if [[ ! -x "${_with_sops_dek}" ]]; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: with-sops-dek not executable: ${_with_sops_dek}" \
+            "${WE_MSG_PREFIX}: with-sops-dek not executable: ${_with_sops_dek}" \
             >&2
         return 1
     fi
     if [[ ! -x "${_get_dek}" ]]; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: get-dek not executable: ${_get_dek}" >&2
+            "${WE_MSG_PREFIX}: get-dek not executable: ${_get_dek}" >&2
         return 1
     fi
     return 0
@@ -163,7 +160,7 @@ _resolve_sops_config() {
     if [[ -n "${_explicit_sops}" ]]; then
         if [[ ! -f "${_explicit_sops}" ]]; then
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: --sops-config not a file: ${_explicit_sops}" \
+                "${WE_MSG_PREFIX}: --sops-config not a file: ${_explicit_sops}" \
                 >&2
             return 1
         fi
@@ -180,7 +177,7 @@ _resolve_sops_config() {
         fi
     fi
     printf '%s\n' \
-        "${EEC_MSG_PREFIX}: need --sops-config or SECCONFIG_DIR with" \
+        "${WE_MSG_PREFIX}: need --sops-config or SECCONFIG_DIR with" \
         ' .sops.yaml' >&2
     return 1
 }
@@ -260,9 +257,9 @@ _encrypt_validate_install() {
     _tmp_encrypted="$(mktemp "${_dir}/.edit-cipher.XXXXXX${_enc_suf}")"
     export SOPS_CONFIG="${_SOPS_CFG}"
     if ! sops -e --output "${_tmp_encrypted}" "${_staging}"; then
-        printf '%s\n' "${EEC_MSG_PREFIX}: sops encrypt failed" >&2
+        printf '%s\n' "${WE_MSG_PREFIX}: sops encrypt failed" >&2
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: hint: extend .sops.yaml path_regex for the" \
+            "${WE_MSG_PREFIX}: hint: extend .sops.yaml path_regex for the" \
             " plaintext path sops sees (staging file):" >&2
         printf '%s\n' "  ${_staging}" >&2
         return 1
@@ -271,10 +268,10 @@ _encrypt_validate_install() {
     _staging_file=""
     if ! _with_sops_cmd sops decrypt --output /dev/null \
         "${_tmp_encrypted}"; then
-        printf '%s\n' "${EEC_MSG_PREFIX}: validation decrypt failed" >&2
+        printf '%s\n' "${WE_MSG_PREFIX}: validation decrypt failed" >&2
         return 1
     fi
-    if ! eec_confirm_overwrite "${_final}"; then
+    if ! we_confirm_overwrite "${_final}"; then
         return 1
     fi
     mv -f "${_tmp_encrypted}" "${_final}"
@@ -359,43 +356,43 @@ _wek_dir_files_list() {
     return 0
 }
 
-# Create dirname(EEC_OUT_FINAL) if missing; y/N like eec_new. Exits on cancel.
+# Create dirname(WE_OUT_FINAL) if missing; y/N like we_read path helper.
 _wek_mkdir_out_parent() {
     local _odir _mk
-    _odir="$(dirname "${EEC_OUT_FINAL}")"
+    _odir="$(dirname "${WE_OUT_FINAL}")"
     if [[ -d "${_odir}" ]]; then
         return 0
     fi
     printf '%s' "Create directory ${_odir}? [y/N] " >&2
     if ! _wek_read_pick_line _mk; then
-        printf '%s\n' "${EEC_MSG_PREFIX}: cancelled" >&2
+        printf '%s\n' "${WE_MSG_PREFIX}: cancelled" >&2
         exit 1
     fi
     if [[ "${_mk}" != y ]]; then
-        printf '%s\n' "${EEC_MSG_PREFIX}: cancelled" >&2
+        printf '%s\n' "${WE_MSG_PREFIX}: cancelled" >&2
         exit 1
     fi
     mkdir -p "${_odir}"
     return 0
 }
 
-# Interactive output path for new ciphertext; sets EEC_OUT_FINAL (global).
+# Interactive output path for new ciphertext; sets WE_OUT_FINAL (global).
 wek_new_prompt_output_path_and_mkdir() {
     local _root _line _ndirs _i _chosen _join _rp_dir _want _fn
     local -a _dirs=()
 
-    EEC_OUT_FINAL=""
+    WE_OUT_FINAL=""
     _chosen=""
 
     if [[ -z "${SECCONFIG_DIR:-}" ]]; then
-        eec_new_prompt_output_path_and_mkdir
+        we_read_new_encrypted_path_and_mkdir
         return 0
     fi
     if [[ ! -d "${SECCONFIG_DIR}" ]]; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: SECCONFIG_DIR is not a directory:" \
+            "${WE_MSG_PREFIX}: SECCONFIG_DIR is not a directory:" \
             " ${SECCONFIG_DIR}" >&2
-        eec_new_prompt_output_path_and_mkdir
+        we_read_new_encrypted_path_and_mkdir
         return 0
     fi
 
@@ -403,7 +400,7 @@ wek_new_prompt_output_path_and_mkdir() {
     mapfile -t _dirs < <(find "${_root}" -type d -print | LC_ALL=C sort)
     _ndirs=${#_dirs[@]}
     if [[ ${_ndirs} -eq 0 ]]; then
-        eec_new_prompt_output_path_and_mkdir
+        we_read_new_encrypted_path_and_mkdir
         return 0
     fi
 
@@ -425,20 +422,20 @@ wek_new_prompt_output_path_and_mkdir() {
 
     while true; do
         if ! _wek_read_pick_line _line; then
-            printf '%s\n' "${EEC_MSG_PREFIX}: cancelled" >&2
+            printf '%s\n' "${WE_MSG_PREFIX}: cancelled" >&2
             exit 1
         fi
         _line="${_line#"${_line%%[![:space:]]*}"}"
         _line="${_line%"${_line##*[![:space:]]}"}"
 
         if [[ -z "${_line}" ]]; then
-            printf '%s\n' "${EEC_MSG_PREFIX}: aborted" >&2
+            printf '%s\n' "${WE_MSG_PREFIX}: aborted" >&2
             exit 1
         fi
 
         if [[ "${_line}" == .. ]] || [[ "${_line}" == ../ ]]; then
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: use a directory number or an explicit" \
+                "${WE_MSG_PREFIX}: use a directory number or an explicit" \
                 ' path' >&2
             continue
         fi
@@ -454,7 +451,7 @@ wek_new_prompt_output_path_and_mkdir() {
                 break
             fi
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: not in range 1-${_ndirs}; try again" >&2
+                "${WE_MSG_PREFIX}: not in range 1-${_ndirs}; try again" >&2
             continue
         fi
 
@@ -462,13 +459,13 @@ wek_new_prompt_output_path_and_mkdir() {
             if [[ "${_line}" == \~* ]]; then
                 _line="${_line/#\~/${HOME}}"
             fi
-            EEC_OUT_FINAL="$(realpath -m "${_line}")"
+            WE_OUT_FINAL="$(realpath -m "${_line}")"
             _wek_mkdir_out_parent
             return 0
         fi
 
         if [[ "${_line}" == ./* ]] || [[ "${_line}" == ../* ]]; then
-            EEC_OUT_FINAL="$(realpath -m "${_line}")"
+            WE_OUT_FINAL="$(realpath -m "${_line}")"
             _wek_mkdir_out_parent
             return 0
         fi
@@ -483,7 +480,7 @@ wek_new_prompt_output_path_and_mkdir() {
                     ;;
                 *)
                     printf '%s\n' \
-                        "${EEC_MSG_PREFIX}: directory outside SECCONFIG_DIR" \
+                        "${WE_MSG_PREFIX}: directory outside SECCONFIG_DIR" \
                         >&2
                     continue
                     ;;
@@ -493,13 +490,13 @@ wek_new_prompt_output_path_and_mkdir() {
         _want="$(realpath -m "${_join}")"
         case "${_want}" in
             "${_root}"/*)
-                EEC_OUT_FINAL="${_want}"
+                WE_OUT_FINAL="${_want}"
                 _wek_mkdir_out_parent
                 return 0
                 ;;
         esac
 
-        EEC_OUT_FINAL="$(realpath -m "${_line}")"
+        WE_OUT_FINAL="$(realpath -m "${_line}")"
         _wek_mkdir_out_parent
         return 0
     done
@@ -514,29 +511,29 @@ wek_new_prompt_output_path_and_mkdir() {
 
     while true; do
         if ! _wek_read_pick_line _fn; then
-            printf '%s\n' "${EEC_MSG_PREFIX}: cancelled" >&2
+            printf '%s\n' "${WE_MSG_PREFIX}: cancelled" >&2
             exit 1
         fi
         _fn="${_fn#"${_fn%%[![:space:]]*}"}"
         _fn="${_fn%"${_fn##*[![:space:]]}"}"
 
         if [[ -z "${_fn}" ]]; then
-            printf '%s\n' "${EEC_MSG_PREFIX}: aborted" >&2
+            printf '%s\n' "${WE_MSG_PREFIX}: aborted" >&2
             exit 1
         fi
 
         if [[ "${_fn}" == */* ]]; then
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: use basename only (no slashes), or" \
+                "${WE_MSG_PREFIX}: use basename only (no slashes), or" \
                 ' cancel and enter a full path at the directory step' >&2
             continue
         fi
         if [[ "${_fn}" == . ]] || [[ "${_fn}" == .. ]]; then
-            printf '%s\n' "${EEC_MSG_PREFIX}: invalid filename" >&2
+            printf '%s\n' "${WE_MSG_PREFIX}: invalid filename" >&2
             continue
         fi
 
-        EEC_OUT_FINAL="${_chosen}/${_fn}"
+        WE_OUT_FINAL="${_chosen}/${_fn}"
         return 0
     done
 }
@@ -550,12 +547,12 @@ _run_new() {
     chmod 600 "${_plain_file}"
 
     printf '%s\n' "Created empty file: ${_plain_file}"
-    eec_print_edit_instructions "${_plain_file}"
-    eec_prompt_press_enter_after_edit encrypt
-    eec_ensure_plain_nonempty_or_confirm "${_plain_file}"
+    we_print_edit_instructions "${_plain_file}"
+    we_prompt_press_enter_after_edit encrypt
+    we_ensure_plain_nonempty_or_confirm "${_plain_file}"
 
     wek_new_prompt_output_path_and_mkdir
-    local _final="${EEC_OUT_FINAL}"
+    local _final="${WE_OUT_FINAL}"
 
     _staging_file="$(_wek_mktemp_staging_for_final "${_final}")"
     chmod 600 "${_staging_file}"
@@ -573,7 +570,7 @@ _run_new() {
 _run_edit() {
     if [[ ${#} -ne 1 ]]; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: requires exactly one encrypted file" >&2
+            "${WE_MSG_PREFIX}: requires exactly one encrypted file" >&2
         wek_edit_usage
         exit 1
     fi
@@ -583,7 +580,7 @@ _run_edit() {
     local _enc_in
     _enc_in="$(realpath "${1}")"
     if [[ ! -f "${_enc_in}" ]]; then
-        printf '%s\n' "${EEC_MSG_PREFIX}: not a file: ${_enc_in}" >&2
+        printf '%s\n' "${WE_MSG_PREFIX}: not a file: ${_enc_in}" >&2
         exit 1
     fi
 
@@ -593,30 +590,30 @@ _run_edit() {
     chmod 600 "${_plain_file}"
 
     if ! _with_sops_cmd sops decrypt --output "${_plain_file}" "${_enc_in}"; then
-        printf '%s\n' "${EEC_MSG_PREFIX}: decrypt failed" >&2
+        printf '%s\n' "${WE_MSG_PREFIX}: decrypt failed" >&2
         rm -f "${_plain_file}"
         exit 1
     fi
 
     printf '%s\n' "Decrypted to: ${_plain_file}"
-    eec_print_edit_instructions "${_plain_file}"
-    eec_prompt_press_enter_after_edit re-encrypt
-    eec_ensure_plain_nonempty_or_confirm "${_plain_file}"
+    we_print_edit_instructions "${_plain_file}"
+    we_prompt_press_enter_after_edit re-encrypt
+    we_ensure_plain_nonempty_or_confirm "${_plain_file}"
 
     _staging_file="$(_wek_mktemp_staging_for_final "${_enc_in}")"
     chmod 600 "${_staging_file}"
     cp "${_plain_file}" "${_staging_file}"
 
-    eec_backup_resolve_and_mv_live "${_enc_in}"
+    we_backup_resolve_and_mv_live "${_enc_in}"
 
     if ! _encrypt_validate_install "${_staging_file}" "${_enc_in}"; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: failed after moving old file. Restore:" >&2
-        printf '  mv -f %q %q\n' "${EEC_BACKUP}" "${_enc_in}" >&2
+            "${WE_MSG_PREFIX}: failed after moving old file. Restore:" >&2
+        printf '  mv -f %q %q\n' "${WE_BACKUP}" "${_enc_in}" >&2
         exit 1
     fi
 
-    eec_optional_delete_backup_prompt "${EEC_BACKUP}"
+    we_optional_delete_backup_prompt "${WE_BACKUP}"
 
     trap - EXIT
     rm -f "${_plain_file}"
@@ -636,7 +633,7 @@ wek_prompt_pick_encrypted_file() {
             _root="$(cd "${SECCONFIG_DIR}" && pwd)" || return 1
         else
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: SECCONFIG_DIR is not a directory:" \
+                "${WE_MSG_PREFIX}: SECCONFIG_DIR is not a directory:" \
                 " ${SECCONFIG_DIR}" >&2
         fi
     fi
@@ -665,14 +662,14 @@ wek_prompt_pick_encrypted_file() {
     else
         if [[ -n "${_root}" ]]; then
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: no *.enc.yaml / *.enc.yml / *.enc.pem" \
+                "${WE_MSG_PREFIX}: no *.enc.yaml / *.enc.yml / *.enc.pem" \
                 " under ${_root}" >&2
             printf '%s\n' \
                 'Enter path (relative to SECCONFIG_DIR or absolute under it),' \
                 ' or empty to abort:' >&2
         else
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: no SECCONFIG_DIR list (unset or not a" \
+                "${WE_MSG_PREFIX}: no SECCONFIG_DIR list (unset or not a" \
                 ' directory).' >&2
             printf '%s\n' \
                 'Enter path to encrypted file (relative or absolute),' \
@@ -682,14 +679,14 @@ wek_prompt_pick_encrypted_file() {
 
     while true; do
         if ! _wek_read_pick_line _line; then
-            printf '%s\n' "${EEC_MSG_PREFIX}: cancelled" >&2
+            printf '%s\n' "${WE_MSG_PREFIX}: cancelled" >&2
             return 1
         fi
         _line="${_line#"${_line%%[![:space:]]*}"}"
         _line="${_line%"${_line##*[![:space:]]}"}"
 
         if [[ -z "${_line}" ]]; then
-            printf '%s\n' "${EEC_MSG_PREFIX}: aborted" >&2
+            printf '%s\n' "${WE_MSG_PREFIX}: aborted" >&2
             return 1
         fi
 
@@ -699,13 +696,13 @@ wek_prompt_pick_encrypted_file() {
                 return 0
             fi
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: not in range 1-${_n}; try again" >&2
+                "${WE_MSG_PREFIX}: not in range 1-${_n}; try again" >&2
             continue
         fi
 
         if [[ "${_line}" =~ ^[0-9]+$ ]]; then
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: enter a file path, not a number" >&2
+                "${WE_MSG_PREFIX}: enter a file path, not a number" >&2
             continue
         fi
 
@@ -720,12 +717,12 @@ wek_prompt_pick_encrypted_file() {
         fi
         if ! _rp="$(realpath "${_try}" 2>/dev/null)"; then
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: not a valid path: ${_line}" >&2
+                "${WE_MSG_PREFIX}: not a valid path: ${_line}" >&2
             continue
         fi
         if [[ ! -f "${_rp}" ]]; then
             printf '%s\n' \
-                "${EEC_MSG_PREFIX}: not a file: ${_rp}" >&2
+                "${WE_MSG_PREFIX}: not a file: ${_rp}" >&2
             continue
         fi
         if [[ -n "${_root}" ]]; then
@@ -733,7 +730,7 @@ wek_prompt_pick_encrypted_file() {
                 "${_root}"/*) ;;
                 *)
                     printf '%s\n' \
-                        "${EEC_MSG_PREFIX}: path must be under SECCONFIG_DIR:" \
+                        "${WE_MSG_PREFIX}: path must be under SECCONFIG_DIR:" \
                         " ${_root}" >&2
                     continue
                     ;;
@@ -749,7 +746,7 @@ wek_new() {
 
     if ! keyring_no_debug; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: refused (xtrace or verbose enabled)" >&2
+            "${WE_MSG_PREFIX}: refused (xtrace or verbose enabled)" >&2
         exit 1
     fi
 
@@ -765,7 +762,7 @@ wek_new() {
     fi
 
     if [[ ${#} -gt 0 ]]; then
-        printf '%s\n' "${EEC_MSG_PREFIX}: unexpected arguments: ${*}" >&2
+        printf '%s\n' "${WE_MSG_PREFIX}: unexpected arguments: ${*}" >&2
         wek_new_usage
         exit 1
     fi
@@ -778,7 +775,7 @@ wek_edit() {
 
     if ! keyring_no_debug; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: refused (xtrace or verbose enabled)" >&2
+            "${WE_MSG_PREFIX}: refused (xtrace or verbose enabled)" >&2
         exit 1
     fi
 
@@ -800,7 +797,7 @@ wek_edit() {
 
     if [[ ${#} -eq 1 ]] && [[ "${1}" == new ]]; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: use new-encrypted-config.sh to create a file" \
+            "${WE_MSG_PREFIX}: use new-encrypted-config.sh to create a file" \
             >&2
         exit 2
     fi
@@ -812,7 +809,7 @@ wek_edit() {
 
     if [[ ${#} -ne 1 ]]; then
         printf '%s\n' \
-            "${EEC_MSG_PREFIX}: requires zero or one encrypted file" >&2
+            "${WE_MSG_PREFIX}: requires zero or one encrypted file" >&2
         wek_edit_usage
         exit 1
     fi
