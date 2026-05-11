@@ -172,11 +172,13 @@ _keyring_rotate_kek() {
         public_key=$(age-keygen -y "${key_file}" 2>/dev/null)
         if [[ -z "${public_key}" ]]; then
             printf '%s\n' \
-              'keyring: could not create keyring-test.enc (age-keygen -y failed)' \
+              'keyring: could not create keyring-test.enc ('\
+              'age-keygen -y failed)' \
               >&2
         elif [[ ! -f "${test_plain}" ]]; then
             printf '%s\n' \
-              "keyring: could not create keyring-test.enc (${test_plain} missing)" \
+              "keyring: could not create keyring-test.enc (${test_plain}"\
+              ' missing)' \
               >&2
         else
             sops_err=$(sops -e --input-type binary --output-type binary \

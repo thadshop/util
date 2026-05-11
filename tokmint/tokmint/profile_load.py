@@ -5,7 +5,11 @@ Load and validate profile YAML (Phase 1).
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
-from secconfig.loader import SecretsConfigError, load_config, resolve_seconfig_dir
+from secconfig.loader import (
+    SecretsConfigError,
+    load_config,
+    resolve_seconfig_dir,
+)
 
 from tokmint.canonical import CanonicalDomainError, canonical_domain
 from tokmint.errors import TokmintError
@@ -377,7 +381,7 @@ def _validate_request_headers(headers: Any, ctx: str) -> None:
 
 
 def _validate_tokens(tokens: Any, row_index: int) -> None:
-    """Validate tokens mapping: auth_scheme -> [ { token_id, credential }, ... ]."""
+    """Validate tokens: auth_scheme -> list of {token_id, credential} rows."""
     if tokens is None:
         return
     if not isinstance(tokens, dict):

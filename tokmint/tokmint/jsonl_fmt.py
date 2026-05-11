@@ -32,6 +32,7 @@ Each entry in the emitted array is a single-key object:
 A separator line is printed after each array to make the block easy to
 identify and copy.
 """
+
 import argparse
 import json
 import os
@@ -153,17 +154,19 @@ def main() -> None:
         description="Format a JSON Lines stream for display or copy-paste.",
     )
     parser.add_argument(
-        "-a", "--array",
+        "-a",
+        "--array",
         action="store_true",
         help=(
             "emit all lines as a wrapped array after each burst of input; "
-            "JSON lines become {\"log\": ...}, others become {\"raw\": ...}; "
+            'JSON lines become {"log": ...}, others become {"raw": ...}; '
             "flush timeout configurable via TOKMINT_JSONL_FMT_FLUSH_MS "
             "(default 200 ms)"
         ),
     )
     parser.add_argument(
-        "-c", "--compact",
+        "-c",
+        "--compact",
         action="store_true",
         help="minify JSON output (no indentation)",
     )

@@ -3,7 +3,8 @@
 #
 # Encrypt a plaintext YAML under SECCONFIG_DIR → *.enc.yaml next to input.
 # Uses $SECCONFIG_DIR/.sops.yaml (public age keys in rules; no DEK on encrypt).
-# Same util checkout layout as decrypt-config.sh (see keyring/with-sops-dek.sh).
+# Same util checkout layout as decrypt-config.sh
+# (see keyring/with-sops-dek.sh).
 
 set -e
 
@@ -12,9 +13,11 @@ usage() {
         "usage: encrypt-config.sh [-f|--force] -i|--input FILE [--help]" >&2
     printf '%s\n' "" >&2
     printf '%s\n' \
-        "  -i is required. Plain YAML path relative to \$SECCONFIG_DIR, absolute" >&2
+        "  -i is required. Plain YAML path relative to \$SECCONFIG_DIR,"\
+        " absolute" >&2
     printf '%s\n' \
-        "  under that tree, or - / /dev/stdin (staged under \$SECCONFIG_DIR)." >&2
+        "  under that tree, or - / /dev/stdin (staged under \$SECCONFIG_DIR)." \
+        >&2
     printf '%s\n' \
         "  SECCONFIG_DIR must name the directory with .sops.yaml." >&2
     printf '%s\n' \

@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tokmint.profile_schema import load_profile_schema, validate_profile_document
+from tokmint.profile_schema import (
+    load_profile_schema,
+    validate_profile_document,
+)
 
 _TOK_BEARER = {
     "Bearer": [
@@ -21,7 +24,11 @@ def test_schema_loads() -> None:
 
 
 def test_reference_example_validates() -> None:
-    ref = Path(__file__).resolve().parent.parent / "examples" / "tokmint.example.profile.yaml"
+    ref = (
+        Path(__file__).resolve().parent.parent
+        / "examples"
+        / "tokmint.example.profile.yaml"
+    )
     data = yaml.safe_load(ref.read_text(encoding="utf-8"))
     validate_profile_document(data)
 
@@ -123,9 +130,7 @@ def test_reject_auth_server_path_without_leading_slash() -> None:
                         "clients": [
                             {
                                 "client_id": "c",
-                                "client_authn_method": (
-                                    "client_secret_post"
-                                ),
+                                "client_authn_method": ("client_secret_post"),
                                 "client_secret": "s",
                             }
                         ],

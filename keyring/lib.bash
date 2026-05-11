@@ -765,8 +765,8 @@ _keyring_dek_decrypt_fail() {
 }
 
 keyring_init() {
-    # Prompt for passphrase (no echo), hash with SHA256, store in
-    # persistent keyring.
+    # Prompt for passphrase (no echo), hash with SHA256, store KEK hash
+    # in the kernel keyring (persistent on Ubuntu, user @u on WSL2).
     # If dek.encrypted exists: one prompt; correctness checked by decrypt.
     # If no DEK yet (new passphrase): two prompts and they must match.
     # Idempotent: if KEK already exists, does nothing.
@@ -797,8 +797,9 @@ keyring_init() {
     local confirm_msg="Confirm passphrase: "
 
     if [[ -f "${dek_file}" ]]; then
-        prompt_msg="Enter keyring passphrase (verified against DEK, "
-        prompt_msg+="stored in kernel keyring for this session): "
+        prompt_msg="Enter keyring passphrase (verified against DEK; "
+        prompt_msg+="stored in the kernel keyring until reboot or "
+        prompt_msg+="keyring expiry): "
         if ! read -r -s -p "${prompt_msg}" passphrase; then
             printf '%s\n' '' >&2
             printf '%s\n' 'keyring: failed to read passphrase' >&2
@@ -809,8 +810,9 @@ keyring_init() {
         printf '%s\n' '' >&2
         passphrase_confirm=''
     else
-        prompt_msg="Enter keyring passphrase (stored in kernel "
-        prompt_msg+="keyring for this user until logout/reboot): "
+        prompt_msg="Enter keyring passphrase (first-time setup; "
+        prompt_msg+="stored in the kernel keyring until reboot or "
+        prompt_msg+="keyring expiry): "
         if ! read -r -s -p "${prompt_msg}" passphrase; then
             printf '%s\n' '' >&2
             printf '%s\n' 'keyring: failed to read passphrase' >&2
@@ -861,7 +863,8 @@ keyring_init() {
         return 1
     fi
 
-    # When DEK exists, verify passphrase can decrypt it before storing KEK
+    # When DEK exists,
+    #verify passphrase can decrypt it before storing KEK
     local test_enc="${_KEYRING_DATA_DIR}/keyring-test.enc"
     local key_file decrypted
     local dek_file_abs

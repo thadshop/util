@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 
 class TokmintError(Exception):
-    """Raise for predictable API errors; handled by FastAPI exception handler."""
+    """Raise predictable API errors; FastAPI handler maps them to JSON."""
 
     def __init__(self, status_code: int, code: str, detail: str) -> None:
         self.status_code = status_code
@@ -15,7 +15,9 @@ class TokmintError(Exception):
         super().__init__(detail)
 
 
-def error_json_response(status_code: int, code: str, detail: str) -> JSONResponse:
+def error_json_response(
+    status_code: int, code: str, detail: str
+) -> JSONResponse:
     """Build a JSON error body matching the v1 contract."""
     return JSONResponse(
         status_code=status_code,
