@@ -113,7 +113,9 @@ def load_private_key_from_pem_bytes(pem: bytes) -> PrivateKeyTypes:
     Load a PEM-encoded private key (PKCS#8 or traditional).
     """
     try:
-        loaded = load_pem_private_key(pem, password=None, backend=default_backend())
+        loaded = load_pem_private_key(
+            pem, password=None, backend=default_backend()
+        )
     except ValueError as exc:
         raise TokmintError(
             400,

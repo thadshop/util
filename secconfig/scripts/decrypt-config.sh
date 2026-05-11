@@ -19,7 +19,8 @@ usage() {
       "                         [-o|--output FILE] [--help]" >&2
     printf '%s\n' "" >&2
     printf '%s\n' \
-      "  -i is required. Sops file: path relative to \$SECCONFIG_DIR, absolute" \
+      "  -i is required. Sops file: path relative to \$SECCONFIG_DIR,"\
+      " absolute" \
       >&2
     printf '%s\n' \
       "  under that tree, or - / /dev/stdin (spooled to /dev/shm for sops)." >&2
@@ -158,7 +159,8 @@ elif [[ "${_output_file}" == "/dev/stdout" ]] && [[ -t 1 ]]; then
       'decrypt-config: decrypted YAML will be printed to stdout in CLEARTEXT.' \
       >&2
     printf '%s\n' \
-      '  Secrets may appear in terminal scrollback, logs, or downstream pipes.' \
+      '  Secrets may appear in terminal scrollback, logs, or '\
+      'downstream pipes.' \
       >&2
     printf '%s\n' '' >&2
     printf '%s' 'Proceed? [y/N] ' >&2

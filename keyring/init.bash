@@ -2,10 +2,10 @@
 #   source /path/to/util/keyring/init.bash
 #
 # Source this from .profile or .bashrc to initialize keyring on login.
-# On first use per session: prompts for passphrase, hashes it,
-# stores in keyring.
-# On subsequent shells (same session): uses existing keyring entry,
-# no prompt.
+# If the KEK is not in the kernel keyring yet: prompts for passphrase,
+# hashes it, stores it there.
+# If the KEK is already present: no prompt; it survives new shells and
+# logout until reboot or keyring expiry (see keyring/README.md).
 #
 # BASH_SOURCE[0] is set by Bash (not an env var) to the path of
 # this script.

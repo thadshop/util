@@ -14,7 +14,8 @@ _default_get_dek="${_script_dir}/get-dek.sh"
 
 usage() {
     printf '%s\n' \
-        "usage: with-sops-dek.sh [-k|--get-dek SCRIPT] [-c|--sops-config FILE]" \
+        'usage: with-sops-dek.sh [-k|--get-dek SCRIPT] '\
+        '[-c|--sops-config FILE]' \
         >&2
     printf '%s\n' \
         "                        [-h|--help] -- <command> [arg ...]" >&2
@@ -98,7 +99,8 @@ if [[ -n "${_sops_cfg}" ]]; then
             "with-sops-dek: sops config not a file: ${_sops_cfg}" >&2
         exit 1
     fi
-    _sops_cfg="$(cd "$(dirname "${_sops_cfg}")" && pwd)/$(basename "${_sops_cfg}")"
+    _sops_dir="$(cd "$(dirname "${_sops_cfg}")" && pwd)"
+    _sops_cfg="${_sops_dir}/$(basename "${_sops_cfg}")"
 fi
 
 _key_file="/dev/shm/keyring-sops-dek-$$"

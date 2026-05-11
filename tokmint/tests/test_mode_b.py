@@ -508,8 +508,7 @@ def test_dpop_nonce_retry_succeeds(tmp_path: Path) -> None:
     # First response: 400 use_dpop_nonce with DPoP-Nonce header
     first_resp = httpx.Response(
         400,
-        json={"error": "use_dpop_nonce",
-              "error_description": "nonce required"},
+        json={"error": "use_dpop_nonce", "error_description": "nonce required"},
         headers={"DPoP-Nonce": nonce_value},
     )
     # Second response: success
@@ -539,6 +538,7 @@ def test_dpop_nonce_retry_succeeds(tmp_path: Path) -> None:
         factory_call_count += 1
         # Build a real assertion so each call has a unique jti.
         from tokmint.oauth_client_assertion import build_client_assertion_jwt
+
         tok = build_client_assertion_jwt(
             issuer="myclient",
             subject="myclient",
@@ -548,6 +548,7 @@ def test_dpop_nonce_retry_succeeds(tmp_path: Path) -> None:
             profile_jwt_headers=None,
         )
         import jwt as _jwt
+
         payload = _jwt.decode(tok, options={"verify_signature": False})
         issued_jtis.append(payload["jti"])
         return tok

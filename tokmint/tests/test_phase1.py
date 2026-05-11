@@ -53,7 +53,9 @@ def test_p1_01_02_happy_path_and_json_shape(
     assert data["token_type"] == "Bearer"
 
 
-def test_p1_03_missing_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_03_missing_profile(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -69,7 +71,9 @@ def test_p1_03_missing_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert r.json()["code"] == "MISSING_PARAMETER"
 
 
-def test_p1_04_missing_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_04_missing_domain(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -99,7 +103,9 @@ def test_p1_05_empty_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert r.json()["code"] == "MISSING_PARAMETER"
 
 
-def test_p1_06_invalid_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_06_invalid_domain(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -151,7 +157,9 @@ def test_p1_07b_secconfig_dir_path_missing(
     assert r.json()["code"] == "SERVICE_UNAVAILABLE"
 
 
-def test_p1_08_unknown_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_08_unknown_profile(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -168,7 +176,9 @@ def test_p1_08_unknown_profile(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert r.json()["code"] == "UNKNOWN_PROFILE"
 
 
-def test_p1_09_unknown_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_09_unknown_domain(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -185,7 +195,9 @@ def test_p1_09_unknown_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None
     assert r.json()["code"] == "UNKNOWN_DOMAIN"
 
 
-def test_p1_10_unknown_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_10_unknown_token_id(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -238,7 +250,9 @@ def test_p1_12_key_id_set(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert r.json()["code"] == "KEY_ID_NOT_ALLOWED"
 
 
-def test_p1_13_token_id_unset(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_13_token_id_unset(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", MINIMAL_YAML)
@@ -280,7 +294,9 @@ def test_p1_15_unknown_path(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert r.json()["code"] == "NOT_FOUND"
 
 
-def test_p1_16_error_body_shape(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_16_error_body_shape(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     client = _client(monkeypatch, str(sec))
@@ -295,7 +311,9 @@ def test_p1_16_error_body_shape(tmp_path, monkeypatch: pytest.MonkeyPatch) -> No
     assert isinstance(body["detail"], str)
 
 
-def test_p1_17_duplicate_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_17_duplicate_domain(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     bad = """domains:
@@ -324,7 +342,9 @@ def test_p1_17_duplicate_domain(tmp_path, monkeypatch: pytest.MonkeyPatch) -> No
     assert r.json()["code"] == "PROFILE_INVALID"
 
 
-def test_p1_18_duplicate_token_id(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_18_duplicate_token_id(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     bad = """domains:
@@ -380,7 +400,9 @@ def test_duplicate_token_id_across_auth_schemes(
     assert r.json()["code"] == "PROFILE_INVALID"
 
 
-def test_p1_19_missing_domains(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p1_19_missing_domains(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sec = tmp_path / "sec"
     sec.mkdir()
     _write_profile(str(sec), "test", "{}")

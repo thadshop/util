@@ -20,9 +20,7 @@ from tokmint.jwt_sign import (
 
 logger = logging.getLogger(__name__)
 
-CLIENT_ASSERTION_TYPE = (
-    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-)
+CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
 
 def build_client_assertion_jwt(
@@ -56,15 +54,18 @@ def build_client_assertion_jwt(
         "jti": jti,
     }
     alg = algorithm_for_key(private_key)
-    logger.debug("", extra={
-        "event": "client_assertion_jwt",
-        "iss": claims["iss"],
-        "sub": claims["sub"],
-        "aud": claims["aud"],
-        "exp": claims["exp"],
-        "jti": claims["jti"],
-        "alg": alg,
-    })
+    logger.debug(
+        "",
+        extra={
+            "event": "client_assertion_jwt",
+            "iss": claims["iss"],
+            "sub": claims["sub"],
+            "aud": claims["aud"],
+            "exp": claims["exp"],
+            "jti": claims["jti"],
+            "alg": alg,
+        },
+    )
     jose_base: Dict[str, Any] = {"alg": alg}
     headers = merge_jose_headers(jose_base, profile_jwt_headers)
     try:
