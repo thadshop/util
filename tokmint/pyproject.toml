@@ -7,7 +7,7 @@ name = "tokmint"
 version = "0.1.0"
 description = "Local HTTP service to mint API tokens for Postman (static or OAuth client_credentials)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
     "cryptography>=41.0.0",
@@ -41,7 +41,7 @@ pythonpath = ["."]
 
 [tool.ruff]
 line-length = 80
-target-version = "py39"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
