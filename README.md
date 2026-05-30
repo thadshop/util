@@ -6,6 +6,28 @@ too. Please let me know!**
 **Linux only.** Everything in this repo targets Linux; other platforms are not
 supported.
 
+## Install
+
+On **Ubuntu/Debian**, from a clone of this repo:
+
+```bash
+./install/install.sh install
+```
+
+That checks apt/Python dependencies, creates **`tokmint/.venv`**, prompts for
+**`SECCONFIG_DIR`**, merges **`.sops.yaml`**, and writes **`env.bash`**.
+
+See **[install/README.md](install/README.md)** for subcommands, **defaults and
+environment variables before you run**, and permission rules.
+
+Then initialize the keyring and run tokmint:
+
+```bash
+. "${SECCONFIG_DIR}/env.bash"
+source /path/to/util/keyring/init.bash
+tokmint/.venv/bin/python -m tokmint
+```
+
 ## Contents
 
 ### `keyring/`
